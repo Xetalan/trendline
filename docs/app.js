@@ -1588,7 +1588,9 @@ function renderPlan() {
   clearInterval(sessionTick);
   sessionTick = null;
 
-  if (DATA.run) {
+  if (DATA.runFinish) {
+    todayEl.innerHTML = renderRunConfirm();
+  } else if (DATA.run) {
     todayEl.innerHTML = renderRunner();
     clearInterval(runTick);
     runTick = setInterval(() => {
@@ -1662,7 +1664,7 @@ function renderPlan() {
     progHost.id = 'planRun';
     document.getElementById('planWeek').before(progHost);
   }
-  if (DATA.run) progHost.innerHTML = '';
+  if (DATA.run || DATA.runFinish) progHost.innerHTML = '';
   else renderRunProgramme(progHost);
 
   // --- the week
@@ -1841,38 +1843,120 @@ function togglePauseRun() {
   renderPlan();
 }
 
+// A session is part running and part walking, and they happen at different
+// speeds, so logging one blended activity would misreport both. Split the
+// time and let the speeds be filled in before anything is written.
+function sessionSplit(s) {
+  let runSec = 0, walkSec = 0;
+  s.steps.forEach((x) => { if (x.type === 'run') runSec += x.seconds; else walkSec += x.seconds; });
+  return { runSec, walkSec };
+}
+
+function openRunConfirm(key, date) {
+  const s = runSessionByKey(key);
+  if (!s) return;
+  const { runSec, walkSec } = sessionSplit(s);
+  DATA.runFinish = {
+    key,
+    date: date || todayISO(),
+    runMin: +(runSec / 60).toFixed(1),
+    walkMin: +(walkSec / 60).toFixed(1),
+    // Whatever you entered last time is nearly always right again.
+    runSpeed: DATA.settings.lastRunSpeed ?? null,
+    walkSpeed: DATA.settings.lastWalkSpeed ?? null,
+  };
+  save(true);
+  renderPlan();
+}
+
 function stopRun(logIt) {
   const r = DATA.run;
   if (!r) return;
-  const s = runSessionByKey(r.key);
-  const minutes = Math.max(1, Math.round(runElapsed() / 60));
+  const key = r.key;
   const finished = logIt === true;
-
-  if (finished && s) {
-    ensureRunState();
-    if (!DATA.running.completed.includes(r.key)) DATA.running.completed.push(r.key);
-    DATA.activities.push({
-      id: `c${Date.now()}${Math.random().toString(36).slice(2, 5)}`,
-      date: todayISO(),
-      type: 'run',
-      minutes,
-      distance: 0,
-      label: '',
-      notes: `Week ${s.week} run ${s.day} — ${s.label}`,
-      exercises: [],
-    });
-  }
   delete DATA.run;
   clearInterval(runTick);
   runTick = null;
   keepAwake(false);
   save(true);
-  renderAll();
+
   if (finished) {
     say('Workout complete. Well done.');
     beep(880, 160); beep(1175, 200, 0.2); beep(1568, 320, 0.42);
-    toast(`Logged ${minutes} min. Add your distance under Training.`);
+    openRunConfirm(key);
+  } else {
+    renderAll();
   }
+}
+
+function confirmRunSplit() {
+  const f = DATA.runFinish;
+  if (!f) return;
+  const s = runSessionByKey(f.key);
+  const mk = (type, minutes, speed) => {
+    if (!minutes) return null;
+    const mph = Number(speed) || 0;
+    return {
+      id: `c${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
+      date: f.date,
+      type,
+      minutes,
+      distance: mph > 0 ? +((mph * minutes) / 60).toFixed(2) : 0,
+      label: '',
+      notes: s ? `Week ${s.week} run ${s.day} — ${s.label}` : '',
+      exercises: [],
+    };
+  };
+  [mk('run', f.runMin, f.runSpeed), mk('walk', f.walkMin, f.walkSpeed)]
+    .filter(Boolean)
+    .forEach((a) => DATA.activities.push(a));
+
+  ensureRunState();
+  if (!DATA.running.completed.includes(f.key)) DATA.running.completed.push(f.key);
+  if (Number(f.runSpeed) > 0) DATA.settings.lastRunSpeed = Number(f.runSpeed);
+  if (Number(f.walkSpeed) > 0) DATA.settings.lastWalkSpeed = Number(f.walkSpeed);
+
+  delete DATA.runFinish;
+  save(true);
+  renderAll();
+  toast('Logged as a run and a walk.');
+}
+
+function renderRunConfirm() {
+  const f = DATA.runFinish;
+  const s = runSessionByKey(f.key);
+  const dist = (min, mph) => (Number(mph) > 0 ? `${((Number(mph) * min) / 60).toFixed(2)} mi` : '—');
+
+  const row = (type, label, min, speed, colour) => `
+    <div class="split-row">
+      <span class="dist-dot" style="background:var(${colour})"></span>
+      <div class="split-what">
+        <div class="split-name">${label}</div>
+        <div class="tile-sub">${min} min</div>
+      </div>
+      <label class="field">Speed (mph)
+        <input type="number" step="0.1" min="0" value="${speed ?? ''}"
+               data-split="${type}Speed" placeholder="${type === 'run' ? '5.0' : '3.0'}" /></label>
+      <div class="split-dist">${dist(min, speed)}</div>
+    </div>`;
+
+  return `
+    <div class="card" style="border-color:var(--accent)">
+      <div class="card-head">
+        <span class="card-title">Nice work — week ${s.week} run ${s.day}</span>
+        <span class="card-note">${esc(s.label)}</span>
+      </div>
+      <p class="hint" style="margin-bottom:14px">Logged as two workouts, since you ran and walked at
+        different speeds. Put in each speed and the distance works itself out.</p>
+      ${row('run', 'Running', f.runMin, f.runSpeed, '--series-1')}
+      ${row('walk', 'Walking', f.walkMin, f.walkSpeed, '--series-2')}
+      <div class="row" style="margin-top:16px">
+        <button class="btn" id="splitSave">Save both</button>
+        <button class="btn ghost" id="splitSkip">Mark done without logging</button>
+        <span class="spacer"></span>
+        <button class="btn danger" id="splitCancel">Cancel</button>
+      </div>
+    </div>`;
 }
 
 // Fires the beeps and speech for whatever just changed.
@@ -1993,7 +2077,10 @@ function renderRunProgramme(host) {
             <div class="tile-sub">${esc(next.label)} · ${Running.fmtMins(Running.totalSeconds(next))}
               · ${esc(next.note)}</div>
           </div>
-          <button class="btn" data-run="${next.key}">Start run</button>
+          <span class="row">
+            <button class="btn" data-run="${next.key}">Start run</button>
+            <button class="btn ghost" data-mark="${next.key}">Mark done</button>
+          </span>
         </div>`
         : '<p class="hint">Programme complete — that is a 10K. Pick any week to run again below.</p>'}
       <details style="margin-top:14px">
@@ -2517,6 +2604,26 @@ function wire() {
     }
     const runStart = e.target.closest('[data-run]');
     if (runStart) { startRun(runStart.dataset.run); return; }
+    const mark = e.target.closest('[data-mark]');
+    if (mark) { openRunConfirm(mark.dataset.mark); return; }
+    if (e.target.closest('#splitSave')) { confirmRunSplit(); return; }
+    if (e.target.closest('#splitSkip')) {
+      ensureRunState();
+      if (!DATA.running.completed.includes(DATA.runFinish.key)) {
+        DATA.running.completed.push(DATA.runFinish.key);
+      }
+      delete DATA.runFinish;
+      save(true);
+      renderAll();
+      toast('Marked done.');
+      return;
+    }
+    if (e.target.closest('#splitCancel')) {
+      delete DATA.runFinish;
+      save(true);
+      renderAll();
+      return;
+    }
     if (e.target.closest('#runPause')) { togglePauseRun(); return; }
     if (e.target.closest('#runFinish')) { stopRun(true); return; }
     if (e.target.closest('#runAbandon')) { stopRun(false); return; }
@@ -2526,6 +2633,18 @@ function wire() {
 
   // Correcting a target in place: the numbers I seeded are a starting guess,
   // and the loading hint and next step have to follow whatever you change.
+  document.body.addEventListener('input', (e) => {
+    const sp = e.target.closest('[data-split]');
+    if (!sp || !DATA.runFinish) return;
+    const v = Number(sp.value);
+    DATA.runFinish[sp.dataset.split] = Number.isFinite(v) && v > 0 ? v : null;
+    // Update the distance beside it in place, so the field keeps focus.
+    const row = sp.closest('.split-row');
+    const mins = DATA.runFinish[sp.dataset.split === 'runSpeed' ? 'runMin' : 'walkMin'];
+    row.querySelector('.split-dist').textContent =
+      v > 0 ? `${((v * mins) / 60).toFixed(2)} mi` : '—';
+  });
+
   document.body.addEventListener('change', (e) => {
     const el = e.target.closest('[data-edit]');
     if (!el) return;

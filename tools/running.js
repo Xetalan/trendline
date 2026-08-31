@@ -136,28 +136,77 @@ app.whenReady().then(async () => {
     const t3 = await run('runElapsed()');
     check('resuming restarts it', t3 >= t2, `${t2} -> ${t3}`);
 
-    // Jump past the end; the runner should log and clear itself.
+    // Jump past the end; the runner should hand over to the split confirmation
+    // rather than logging one blended activity.
     await jumpTo(Math.round(R.totalSeconds(R.sessionAt(1, 1))) + 5);
     await settle(700);
-    const d2 = await run('JSON.parse(JSON.stringify(DATA))');
-    check('finishing logs a run', d2.activities.some((a) => a.type === 'run'),
-      JSON.stringify(d2.activities));
+    let d2 = await run('JSON.parse(JSON.stringify(DATA))');
+    check('the runner clears itself', !d2.run, JSON.stringify(d2.run));
+    check('nothing is logged until the split is confirmed',
+      d2.activities.length === 0, JSON.stringify(d2.activities));
+    check('the split is offered', !!d2.runFinish, 'no runFinish');
+    check('week 1 run 1 splits into 8 min running and 20.5 walking',
+      d2.runFinish.runMin === 8 && d2.runFinish.walkMin === 20.5,
+      JSON.stringify(d2.runFinish));
+    check('the confirmation card is on screen',
+      await run(`!!document.getElementById('splitSave')`), 'no card');
+
+    // Enter a speed for each, the way you would after a treadmill session.
+    await run(`(() => {
+      const set = (sel, v) => { const el = document.querySelector(sel);
+        el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+      set('[data-split="runSpeed"]', '5');
+      set('[data-split="walkSpeed"]', '3');
+      return true; })()`);
+    await settle(300);
+    const shownDist = await run(`[...document.querySelectorAll('.split-dist')].map((e) => e.textContent)`);
+    check('distance is computed live from the speed',
+      // 3 mph x 20.5 min is 1.025 mi, which binary floating point renders as
+      // 1.02 rather than 1.03. Eight metres; not worth engineering around.
+      shownDist[0] === '0.67 mi' && shownDist[1] === '1.02 mi', JSON.stringify(shownDist));
+
+    await run(`document.getElementById('splitSave').click(); true;`);
+    await settle(600);
+    d2 = await run('JSON.parse(JSON.stringify(DATA))');
+    const loggedRun = d2.activities.find((a) => a.type === 'run');
+    const loggedWalk = d2.activities.find((a) => a.type === 'walk');
+    check('it logs a run AND a walk, not one blended activity',
+      d2.activities.length === 2 && loggedRun && loggedWalk,
+      JSON.stringify(d2.activities.map((a) => a.type)));
+    check('the run carries its own minutes and distance',
+      loggedRun.minutes === 8 && loggedRun.distance === 0.67,
+      JSON.stringify(loggedRun));
+    check('the walk carries its own minutes and distance',
+      loggedWalk.minutes === 20.5 && loggedWalk.distance === 1.02,
+      JSON.stringify(loggedWalk));
+    check('both name the session', /Week 1 run 1/.test(loggedRun.notes)
+      && /Week 1 run 1/.test(loggedWalk.notes), loggedRun.notes);
     check('it is marked complete', (d2.running.completed || []).includes('1:1'),
       JSON.stringify(d2.running));
-    check('the runner clears itself', !d2.run, JSON.stringify(d2.run));
-    const logged = d2.activities.find((a) => a.type === 'run');
-    check('logged with the session in the notes', /Week 1 run 1/.test(logged.notes), logged.notes);
-    check('duration is about the session length',
-      Math.abs(logged.minutes - 28.5) <= 1.5, `${logged.minutes} min`);
+    check('the speeds are remembered for next time',
+      d2.settings.lastRunSpeed === 5 && d2.settings.lastWalkSpeed === 3,
+      JSON.stringify(d2.settings.lastRunSpeed));
+
+    // Marking done without ever starting the timer.
+    await run(`openRunConfirm('1:2'); true;`);
+    await settle(400);
+    const prefill = await run(`document.querySelector('[data-split="runSpeed"]').value`);
+    check('the remembered speed is prefilled', prefill === '5', prefill);
+    await run(`document.getElementById('splitSkip').click(); true;`);
+    await settle(500);
+    d2 = await run('JSON.parse(JSON.stringify(DATA))');
+    check('mark-done-without-logging adds no activity',
+      d2.activities.length === 2 && d2.running.completed.includes('1:2'),
+      JSON.stringify({ n: d2.activities.length, done: d2.running.completed }));
 
     await settle(300);
-    check('the programme now offers run 2',
-      /Week 1 · run 2/.test(await run(`document.getElementById('planRun').textContent`)),
+    check('the programme now offers run 3',
+      /Week 1 · run 3/.test(await run(`document.getElementById('planRun').textContent`)),
       'did not advance');
 
     // Discarding must not log anything.
     const before = await run('DATA.activities.length');
-    await run(`startRun('1:2'); true;`);
+    await run(`startRun('1:3'); true;`);
     await settle(300);
     await run(`stopRun(false); true;`);
     await settle(400);

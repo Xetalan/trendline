@@ -115,7 +115,13 @@ app.whenReady().then(async () => {
   await new Promise((r) => setTimeout(r, 900));
   fs.writeFileSync(path.join(OUT, `runner-${theme}.png`), (await win.webContents.capturePage()).toPNG());
   console.log('wrote', `runner-${theme}.png`);
-  await win.webContents.executeJavaScript(`stopRun(false); true;`);
+  // The split confirmation shown after a run.
+  await win.webContents.executeJavaScript(`openRunConfirm('1:1');
+    DATA.runFinish.runSpeed = 5; DATA.runFinish.walkSpeed = 3; renderPlan(); true;`);
+  await new Promise((r) => setTimeout(r, 800));
+  fs.writeFileSync(path.join(OUT, `run-split-${theme}.png`), (await win.webContents.capturePage()).toPNG());
+  console.log('wrote', `run-split-${theme}.png`);
+  await win.webContents.executeJavaScript(`delete DATA.runFinish; delete DATA.run; renderAll(); true;`);
   await new Promise((r) => setTimeout(r, 400));
 
   // Each dashboard focus panel.
