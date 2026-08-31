@@ -5,7 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node tools/loads-test.js && electron tools/smoke.js && electron tools/pace.js && electron tools/workouts.js && electron tools/oura.js && electron tools/layout.js && electron tools/plan.js",
+    "test": "node tools/loads-test.js && electron tools/smoke.js && electron tools/pace.js && electron tools/workouts.js && electron tools/oura.js && electron tools/layout.js && electron tools/plan.js && electron tools/running.js",
     "smoke": "electron tools/smoke.js",
     "pace": "electron tools/pace.js",
     "workouts": "electron tools/workouts.js",
@@ -19,7 +19,8 @@
     "android:sync": "npm run build:mobile && cap sync android",
     "layout": "electron tools/layout.js",
     "loads": "node tools/loads-test.js",
-    "plan": "electron tools/plan.js"
+    "plan": "electron tools/plan.js",
+    "running": "electron tools/running.js"
   },
   "keywords": [],
   "author": "",

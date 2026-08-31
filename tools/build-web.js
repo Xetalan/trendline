@@ -24,7 +24,7 @@ for (const rel of ['styles.css', 'app.js', 'platform-web.js', 'vendor/chart.umd.
   fs.copyFileSync(path.join(SRC, rel), path.join(OUT, rel));
 }
 // Shared with the Electron main process - one mapping, both platforms.
-for (const f of ['oura-map.js', 'loads.js', 'programme.js']) {
+for (const f of ['oura-map.js', 'loads.js', 'programme.js', 'running.js']) {
   fs.copyFileSync(path.join(ROOT, 'lib', f), path.join(OUT, f));
 }
 // Icons: the launcher uses native resources on Android, but the manifest and
@@ -57,7 +57,9 @@ html = html.replace(
 // oura-map defines window.OuraMap, which platform-web reads; both must be in
 // place before app.js runs.
 // Flatten the shared library paths for the web bundle.
-html = html.replace('../lib/loads.js', 'loads.js').replace('../lib/programme.js', 'programme.js');
+html = html.replace('../lib/loads.js', 'loads.js')
+  .replace('../lib/programme.js', 'programme.js')
+  .replace('../lib/running.js', 'running.js');
 
 html = html.replace(
   '<script src="vendor/chart.umd.js"></script>',
@@ -100,7 +102,7 @@ fs.writeFileSync(path.join(OUT, 'sw.js'), `'use strict';
 const CACHE = 'trendline-${VERSION}';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './platform-web.js',
-  './oura-map.js', './loads.js', './programme.js', './vendor/chart.umd.js', './manifest.webmanifest',
+  './oura-map.js', './loads.js', './programme.js', './running.js', './vendor/chart.umd.js', './manifest.webmanifest',
   './oauth.html', './oauth.js',
   './icon-192.png', './icon-512.png', './icon-maskable.png',
 ];

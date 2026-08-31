@@ -108,6 +108,16 @@ app.whenReady().then(async () => {
     console.log('wrote', `${view}-${theme}.png`);
   }
 
+  // The live run interval screen.
+  await win.webContents.executeJavaScript(`show('training'); showSubtab('training','plan');
+    say = () => {}; startRun('1:1');
+    DATA.run.startedAt = new Date(Date.now() - 320 * 1000).toISOString(); true;`);
+  await new Promise((r) => setTimeout(r, 900));
+  fs.writeFileSync(path.join(OUT, `runner-${theme}.png`), (await win.webContents.capturePage()).toPNG());
+  console.log('wrote', `runner-${theme}.png`);
+  await win.webContents.executeJavaScript(`stopRun(false); true;`);
+  await new Promise((r) => setTimeout(r, 400));
+
   // Each dashboard focus panel.
   for (const focus of ['run', 'lift']) {
     await win.webContents.executeJavaScript(

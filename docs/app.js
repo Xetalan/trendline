@@ -1588,7 +1588,34 @@ function renderPlan() {
   clearInterval(sessionTick);
   sessionTick = null;
 
-  if (DATA.session) {
+  if (DATA.run) {
+    todayEl.innerHTML = renderRunner();
+    clearInterval(runTick);
+    runTick = setInterval(() => {
+      if (!DATA.run) { clearInterval(runTick); runTick = null; return; }
+      const pos = runPosition();
+      runCues(pos);
+      if (!DATA.run || !pos || pos.done) return;
+      const card = document.querySelector('.runner');
+      if (!card) return;
+      card.className = `card runner ${pos.step.type}`;
+      card.querySelector('.runner-now').textContent = Running.STEP_LABEL[pos.step.type];
+      card.querySelector('.runner-clock').textContent = Running.fmtClock(pos.left);
+      // What is coming and how many runs remain change as the session moves,
+      // so they have to be refreshed here too, not just on the first render.
+      const upcoming = pos.session.steps[pos.index + 1];
+      const runsLeft = pos.session.steps.slice(pos.index).filter((x) => x.type === 'run').length;
+      card.querySelector('.runner-next').textContent =
+        (upcoming ? `Next: ${Running.STEP_LABEL[upcoming.type]} ${Running.fmtClock(upcoming.seconds)}`
+                  : 'Last stretch')
+        + ` · ${runsLeft} run${runsLeft === 1 ? '' : 's'} left`;
+      const pct = pos.total ? Math.min(100, (pos.elapsedTotal / pos.total) * 100) : 0;
+      card.querySelector('.goal-fill').style.width = pct + '%';
+      const legend = card.querySelectorAll('.goal-legend span');
+      legend[0].textContent = Running.fmtClock(pos.elapsedTotal) + ' elapsed';
+      legend[1].textContent = Running.fmtClock(pos.total - pos.elapsedTotal) + ' to go';
+    }, 250);
+  } else if (DATA.session) {
     todayEl.innerHTML = renderSessionRunner();
     // Only the clock needs to tick; re-rendering the whole card would fight
     // with taps on the set buttons.
@@ -1615,7 +1642,7 @@ function renderPlan() {
           <div class="hint" style="margin-bottom:12px">${tpl.exercises.length} exercises · `
             + `${tpl.exercises.reduce((a, e) => a + e.sets, 0)} sets</div>
           <button class="btn" data-start="${tpl.id}">Start workout</button>`
-        : p.type === 'run' ? '<p class="hint">Scheduled run. Log it from Log Today.</p>'
+        : p.type === 'run' ? '<p class="hint">Scheduled run — your next programme run is below.</p>'
         : '<p class="hint">Nothing scheduled. Rest is part of the plan.</p>'}
         ${dailyTemplates().map((d) => `
           <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
@@ -1627,6 +1654,16 @@ function renderPlan() {
           </div>`).join('')}
       </div>`;
   }
+
+  // --- the running programme
+  let progHost = document.getElementById('planRun');
+  if (!progHost) {
+    progHost = document.createElement('div');
+    progHost.id = 'planRun';
+    document.getElementById('planWeek').before(progHost);
+  }
+  if (DATA.run) progHost.innerHTML = '';
+  else renderRunProgramme(progHost);
 
   // --- the week
   document.getElementById('planWeek').innerHTML = `
@@ -1681,6 +1718,293 @@ function renderPlan() {
       ${tpl.bandWork ? '' : `<p class="hint" style="margin-top:10px">Weights are per side —
         both arms loaded the same. Totals are double.</p>`}
     </div>`).join('');
+}
+
+/* ------------------------------------------------------------ run programme
+   Couch to 5K through to 10K, with the interval cues spoken and beeped so the
+   phone can stay in a pocket. Timing is read off the wall clock rather than
+   counted down, because a backgrounded tab gets throttled and a drifting
+   timer would quietly ruin the session. */
+
+let runTick = null;
+let audioCtx = null;
+let wakeLock = null;
+let lastCue = { step: -1, count: -1 };
+
+function ensureRunState() {
+  if (!DATA.running) DATA.running = { completed: [] };
+  if (!Array.isArray(DATA.running.completed)) DATA.running.completed = [];
+}
+
+function beep(freq, ms, delay) {
+  if (!audioCtx) return;
+  try {
+    const t = audioCtx.currentTime + (delay || 0);
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.frequency.value = freq;
+    osc.type = 'sine';
+    // A short ramp instead of a hard stop; square edges click unpleasantly.
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + ms / 1000);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + ms / 1000 + 0.05);
+  } catch (_) { /* audio is a nicety, never a blocker */ }
+}
+
+function say(text) {
+  try {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.05;
+    u.volume = 1;
+    window.speechSynthesis.speak(u);
+  } catch (_) { /* voice is optional */ }
+}
+
+async function keepAwake(on) {
+  try {
+    if (on) {
+      if (navigator.wakeLock && !wakeLock) wakeLock = await navigator.wakeLock.request('screen');
+    } else if (wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch (_) { /* not supported everywhere */ }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && DATA && DATA.run) keepAwake(true);
+});
+
+const runSessionByKey = (k) => Running.allSessions().find((s) => s.key === k) || null;
+
+function startRun(key) {
+  ensureRunState();
+  const s = runSessionByKey(key);
+  if (!s) return;
+  // Created inside the tap that starts the run, which is what unlocks audio.
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (_) { audioCtx = null; }
+
+  DATA.run = { key, startedAt: new Date().toISOString(), pausedAt: null, pausedMs: 0 };
+  lastCue = { step: -1, count: -1 };
+  save(true);
+  keepAwake(true);
+  say(`Starting week ${s.week}, run ${s.day}. Warm up walk for five minutes.`);
+  renderPlan();
+}
+
+function runElapsed() {
+  const r = DATA.run;
+  if (!r) return 0;
+  const paused = r.pausedMs + (r.pausedAt ? Date.now() - new Date(r.pausedAt).getTime() : 0);
+  return Math.max(0, (Date.now() - new Date(r.startedAt).getTime() - paused) / 1000);
+}
+
+// Which step we are in, and how far through it.
+function runPosition() {
+  const s = runSessionByKey(DATA.run.key);
+  if (!s) return null;
+  let elapsed = runElapsed();
+  const total = Running.totalSeconds(s);
+  for (let i = 0; i < s.steps.length; i++) {
+    const step = s.steps[i];
+    if (elapsed < step.seconds) {
+      return { session: s, index: i, step, into: elapsed, left: step.seconds - elapsed, total,
+        done: false, elapsedTotal: runElapsed() };
+    }
+    elapsed -= step.seconds;
+  }
+  return { session: s, index: s.steps.length, step: null, into: 0, left: 0, total,
+    done: true, elapsedTotal: runElapsed() };
+}
+
+function togglePauseRun() {
+  const r = DATA.run;
+  if (!r) return;
+  if (r.pausedAt) {
+    r.pausedMs += Date.now() - new Date(r.pausedAt).getTime();
+    r.pausedAt = null;
+    say('Resuming');
+    keepAwake(true);
+  } else {
+    r.pausedAt = new Date().toISOString();
+    say('Paused');
+    keepAwake(false);
+  }
+  save(true);
+  renderPlan();
+}
+
+function stopRun(logIt) {
+  const r = DATA.run;
+  if (!r) return;
+  const s = runSessionByKey(r.key);
+  const minutes = Math.max(1, Math.round(runElapsed() / 60));
+  const finished = logIt === true;
+
+  if (finished && s) {
+    ensureRunState();
+    if (!DATA.running.completed.includes(r.key)) DATA.running.completed.push(r.key);
+    DATA.activities.push({
+      id: `c${Date.now()}${Math.random().toString(36).slice(2, 5)}`,
+      date: todayISO(),
+      type: 'run',
+      minutes,
+      distance: 0,
+      label: '',
+      notes: `Week ${s.week} run ${s.day} — ${s.label}`,
+      exercises: [],
+    });
+  }
+  delete DATA.run;
+  clearInterval(runTick);
+  runTick = null;
+  keepAwake(false);
+  save(true);
+  renderAll();
+  if (finished) {
+    say('Workout complete. Well done.');
+    beep(880, 160); beep(1175, 200, 0.2); beep(1568, 320, 0.42);
+    toast(`Logged ${minutes} min. Add your distance under Training.`);
+  }
+}
+
+// Fires the beeps and speech for whatever just changed.
+function runCues(pos) {
+  if (!pos || DATA.run.pausedAt) return;
+
+  if (pos.done) {
+    if (lastCue.step !== 999) { lastCue.step = 999; stopRun(true); }
+    return;
+  }
+
+  if (pos.index !== lastCue.step) {
+    lastCue = { step: pos.index, count: -1 };
+    const s = pos.session;
+    const label = Running.STEP_LABEL[pos.step.type];
+    const runsLeft = s.steps.slice(pos.index).filter((x) => x.type === 'run').length;
+
+    if (pos.step.type === 'run') {
+      beep(988, 130); beep(1319, 200, 0.16);
+      const mins = pos.step.seconds >= 60
+        ? `${Math.round(pos.step.seconds / 60)} minute${pos.step.seconds >= 120 ? 's' : ''}`
+        : `${pos.step.seconds} seconds`;
+      const tail = runsLeft === 1 ? 'Last one.' : `${runsLeft - 1} more after this.`;
+      say(`Run for ${mins}. ${tail}`);
+    } else if (pos.step.type === 'walk') {
+      beep(587, 220);
+      const mins = pos.step.seconds >= 60
+        ? `${Math.round(pos.step.seconds / 60)} minute${pos.step.seconds >= 120 ? 's' : ''}`
+        : `${pos.step.seconds} seconds`;
+      say(`Walk for ${mins}. ${runsLeft} run${runsLeft === 1 ? '' : 's'} to go.`);
+    } else if (pos.step.type === 'cooldown') {
+      beep(587, 220); beep(440, 300, 0.24);
+      say('Cool down. Walk it out for five minutes.');
+    }
+    return;
+  }
+
+  // Three, two, one into the next interval.
+  const secsLeft = Math.ceil(pos.left);
+  if (secsLeft <= 3 && secsLeft > 0 && secsLeft !== lastCue.count) {
+    lastCue.count = secsLeft;
+    beep(660, 90);
+  }
+
+  // Halfway through anything long enough for it to mean something.
+  if (pos.step.seconds >= 480 && !lastCue.half
+      && pos.into >= pos.step.seconds / 2 && pos.into < pos.step.seconds / 2 + 1) {
+    lastCue.half = true;
+    say('Halfway.');
+  }
+}
+
+function renderRunner() {
+  const pos = runPosition();
+  if (!pos) return '';
+  const s = pos.session;
+  const paused = !!DATA.run.pausedAt;
+  const pct = pos.total ? Math.min(100, (pos.elapsedTotal / pos.total) * 100) : 0;
+  const step = pos.step || { type: 'cooldown', seconds: 0 };
+  const runsLeft = s.steps.slice(pos.index).filter((x) => x.type === 'run').length;
+  const upcoming = s.steps[pos.index + 1];
+
+  return `
+    <div class="card runner ${step.type}">
+      <div class="card-head">
+        <span class="card-title">Week ${s.week} · run ${s.day}</span>
+        <span class="card-note">${esc(s.label)}</span>
+      </div>
+
+      <div class="runner-now">${Running.STEP_LABEL[step.type]}</div>
+      <div class="runner-clock">${Running.fmtClock(pos.left)}</div>
+      <div class="runner-next">
+        ${upcoming ? `Next: ${Running.STEP_LABEL[upcoming.type]} ${Running.fmtClock(upcoming.seconds)}`
+                   : 'Last stretch'}
+        · ${runsLeft} run${runsLeft === 1 ? '' : 's'} left
+      </div>
+
+      <div class="goal-track" style="margin:16px 0 8px">
+        <div class="goal-fill" style="width:${pct}%"></div>
+      </div>
+      <div class="goal-legend">
+        <span>${Running.fmtClock(pos.elapsedTotal)} elapsed</span>
+        <span>${Running.fmtClock(pos.total - pos.elapsedTotal)} to go</span>
+      </div>
+
+      <div class="row" style="margin-top:16px">
+        <button class="btn" id="runPause">${paused ? 'Resume' : 'Pause'}</button>
+        <button class="btn ghost" id="runFinish">Finish &amp; log</button>
+        <span class="spacer"></span>
+        <button class="btn danger" id="runAbandon">Discard</button>
+      </div>
+      ${paused ? '<p class="hint" style="margin-top:10px">Paused — the clock is stopped.</p>' : ''}
+    </div>`;
+}
+
+function renderRunProgramme(host) {
+  ensureRunState();
+  const done = DATA.running.completed;
+  const next = Running.nextSession(done);
+  const all = Running.allSessions();
+  const pct = (done.length / all.length) * 100;
+
+  host.innerHTML = `
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">Couch to 10K</span>
+        <span class="card-note">${done.length} of ${all.length} runs done</span>
+      </div>
+      <div class="goal-track"><div class="goal-fill" style="width:${pct}%"></div></div>
+      <div class="goal-legend" style="margin-bottom:14px">
+        <span>Week 1</span><span>5K at week 9</span><span>10K at week 15</span>
+      </div>
+      ${next ? `
+        <div class="next-run">
+          <div>
+            <div class="tile-label">Next up</div>
+            <div class="next-run-title">Week ${next.week} · run ${next.day}</div>
+            <div class="tile-sub">${esc(next.label)} · ${Running.fmtMins(Running.totalSeconds(next))}
+              · ${esc(next.note)}</div>
+          </div>
+          <button class="btn" data-run="${next.key}">Start run</button>
+        </div>`
+        : '<p class="hint">Programme complete — that is a 10K. Pick any week to run again below.</p>'}
+      <details style="margin-top:14px">
+        <summary class="card-note" style="cursor:pointer">All 45 runs</summary>
+        <div class="run-grid">
+          ${all.map((r) => `
+            <button type="button" class="run-chip${done.includes(r.key) ? ' done' : ''}${next && r.key === next.key ? ' next' : ''}"
+                    data-run="${r.key}" title="${esc(r.label)}">${r.week}.${r.day}</button>`).join('')}
+        </div>
+      </details>
+    </div>`;
 }
 
 /* ------------------------------------------------------------ food
@@ -2191,6 +2515,11 @@ function wire() {
       toggleSet(i, k);
       return;
     }
+    const runStart = e.target.closest('[data-run]');
+    if (runStart) { startRun(runStart.dataset.run); return; }
+    if (e.target.closest('#runPause')) { togglePauseRun(); return; }
+    if (e.target.closest('#runFinish')) { stopRun(true); return; }
+    if (e.target.closest('#runAbandon')) { stopRun(false); return; }
     if (e.target.closest('#sessFinish')) { finishSession(); return; }
     if (e.target.closest('#sessCancel')) { cancelSession(); }
   });
@@ -2508,6 +2837,7 @@ function wire() {
 (async function init() {
   DATA = await window.api.load();
   ensurePlan();
+  ensureRunState();
   applyTheme();
   window.api.backup(DATA);
 
