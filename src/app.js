@@ -2348,6 +2348,11 @@ async function syncOura(days) {
 async function refreshOuraState() {
   const card = document.getElementById('ouraCard');
   if (!card) return;
+  // Oura retired personal access tokens; until OAuth2 is built there is
+  // nothing here that works, so the card stays hidden rather than asking
+  // for a credential that can no longer be created.
+  card.hidden = true;
+  if (true) return;
   if (!window.api.oura) {                    // the PWA build has no Oura bridge
     card.hidden = true;
     return;

@@ -17,6 +17,14 @@ const OUT = path.join(ROOT, MOBILE ? 'mobile/www' : 'docs');
 
 const VERSION = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
 
+// Wipe first: without this, files removed from the source linger in the output
+// and get shipped as orphans. docs/ keeps its .git-tracked dotfiles.
+if (fs.existsSync(OUT)) {
+  for (const entry of fs.readdirSync(OUT)) {
+    if (entry.startsWith('.')) continue;
+    fs.rmSync(path.join(OUT, entry), { recursive: true, force: true });
+  }
+}
 fs.mkdirSync(path.join(OUT, 'vendor'), { recursive: true });
 
 // ---- shared assets, copied verbatim ---------------------------------------
@@ -30,7 +38,7 @@ for (const f of ['oura-map.js', 'loads.js', 'programme.js', 'running.js']) {
 // Icons: the launcher uses native resources on Android, but the manifest and
 // apple-touch-icon links reference these in both builds.
 for (const icon of ['icon-192.png', 'icon-512.png', 'icon-maskable.png']) {
-  const from = path.join(ROOT, 'docs', icon);
+  const from = path.join(ROOT, 'assets', icon);
   if (fs.existsSync(from)) fs.copyFileSync(from, path.join(OUT, icon));
 }
 

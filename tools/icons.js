@@ -10,7 +10,7 @@ const { app, BrowserWindow } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 
-const OUT = path.join(__dirname, '..', 'docs');
+const OUT = path.join(__dirname, '..', 'assets');
 const BLUE = '#2a78d6';
 
 const TARGETS = [
