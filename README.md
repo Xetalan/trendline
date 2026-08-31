@@ -66,6 +66,24 @@ Whichever two fields you touched most recently are treated as your input, so the
 third is the one that gets recomputed. Walks and hikes are summarised in mph and
 runs in pace, matching how each is normally talked about; the CSV carries both.
 
+## Oura ring (desktop only)
+
+Settings → paste a personal access token from **cloud.ouraring.com → Personal
+Access Tokens**, then **Sync now**. Pulls daily steps and workout sessions for
+the last 30 days.
+
+The token is encrypted with the OS keychain (Electron ), not stored
+alongside the weigh-ins.
+
+This cannot work in the PWA: the Oura API returns no 
+header, so a browser blocks the request. The desktop app fetches from the main
+process, where CORS does not apply.
+
+Every imported session keeps its Oura id, so re-syncing an overlapping range
+updates rather than duplicates. **Hand-entered distances are never overwritten** —
+the ring has no distance for treadmill work, and your typed figure is better than
+its guess. Unrecognised Oura activities become `Other` keeping their original name.
+
 ## Your data
 
 - Stored at `%APPDATA%\Trendline\trendline-data.json` — plain JSON, readable and
@@ -106,10 +124,11 @@ the first weigh-in you log becomes your baseline.
 
 ```
 npm start        # run the app
-npm test         # smoke + pace + workouts suites (41 assertions)
+npm test         # all four suites (51 assertions)
 npm run smoke    # drive the UI through its save paths and assert on the data
 npm run pace     # the distance / duration / speed / pace conversions
 npm run workouts # the Workouts report view, editing, and the History range
+npm run oura     # Oura import mapping and dedup, against a stubbed API
 npm run test:web # serves docs/ on localhost and drives the PWA at phone size
                  # TEST_URL=https://… points the same suite at the deployed build
 npm run build:web# build the PWA into docs/

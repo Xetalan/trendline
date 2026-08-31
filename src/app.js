@@ -1300,6 +1300,106 @@ function foodCsv() {
   return toCsv(rows);
 }
 
+/* ------------------------------------------------------------ oura
+   Ring-sourced data. Every imported workout keeps its Oura id, so re-syncing
+   an overlapping range updates rather than duplicates. Anything you typed by
+   hand is never overwritten - your treadmill distances are better than the
+   ring's guess, and the ring has none for indoor work anyway. */
+function mergeOura(payload) {
+  let addedSteps = 0, addedWorkouts = 0, updatedWorkouts = 0;
+
+  (payload.steps || []).forEach(({ date, steps }) => {
+    if (!date || !steps) return;
+    const day = DATA.days[date] || {};
+    if (day.steps === steps) return;
+    day.steps = steps;
+    DATA.days[date] = day;
+    addedSteps++;
+  });
+
+  const bySource = new Map();
+  DATA.activities.forEach((a) => { if (a.sourceId) bySource.set(a.sourceId, a); });
+
+  (payload.workouts || []).forEach((w) => {
+    const existing = bySource.get(w.sourceId);
+    if (existing) {
+      // Refresh only what the ring owns; leave hand-entered distance alone.
+      let touched = false;
+      if (existing.minutes !== w.minutes) { existing.minutes = w.minutes; touched = true; }
+      if (!existing.distance && w.distance) { existing.distance = w.distance; touched = true; }
+      if (existing.date !== w.date) { existing.date = w.date; touched = true; }
+      if (touched) updatedWorkouts++;
+      return;
+    }
+    DATA.activities.push({
+      id: `o${w.sourceId}`,
+      source: 'oura',
+      sourceId: w.sourceId,
+      date: w.date,
+      type: w.type,
+      minutes: w.minutes,
+      distance: w.distance,
+      label: w.label,
+      notes: w.intensity ? `Oura · ${w.intensity} intensity` : 'From Oura',
+      exercises: [],
+    });
+    addedWorkouts++;
+  });
+
+  if (addedSteps || addedWorkouts || updatedWorkouts) save(true);
+  return { addedSteps, addedWorkouts, updatedWorkouts };
+}
+
+async function syncOura(days) {
+  const end = todayISO();
+  const start = iso(addDays(new Date(), -(days || 30)));
+  const btn = document.getElementById('ouraSync');
+  const status = document.getElementById('ouraStatus');
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+  if (status) status.textContent = `Fetching ${fmtShort(start)} – ${fmtShort(end)}…`;
+  try {
+    const res = await window.api.oura.sync({ startDate: start, endDate: end });
+    if (!res.ok) {
+      if (status) status.textContent = res.error;
+      toast(res.error);
+      return;
+    }
+    const merged = mergeOura(res);
+    DATA.settings.ouraLastSync = new Date().toISOString();
+    save(true);
+    renderAll();
+    const bits = [];
+    if (merged.addedWorkouts) bits.push(`${merged.addedWorkouts} new workout${merged.addedWorkouts === 1 ? '' : 's'}`);
+    if (merged.updatedWorkouts) bits.push(`${merged.updatedWorkouts} updated`);
+    if (merged.addedSteps) bits.push(`step counts for ${merged.addedSteps} day${merged.addedSteps === 1 ? '' : 's'}`);
+    const summary = bits.length ? `Imported ${bits.join(', ')}.` : 'Already up to date — nothing new.';
+    if (status) status.textContent = summary;
+    toast(summary);
+  } catch (err) {
+    if (status) status.textContent = String(err.message || err);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Sync now'; }
+  }
+}
+
+async function refreshOuraState() {
+  const card = document.getElementById('ouraCard');
+  if (!card) return;
+  if (!window.api.oura) {                    // the PWA build has no Oura bridge
+    card.hidden = true;
+    return;
+  }
+  const has = await window.api.oura.hasToken();
+  document.getElementById('ouraSync').disabled = !has;
+  document.getElementById('ouraToken').placeholder = has
+    ? 'Token saved — paste a new one to replace it'
+    : 'Paste your Oura personal access token';
+  const last = DATA.settings.ouraLastSync;
+  document.getElementById('ouraStatus').textContent = has
+    ? (last ? `Last synced ${fmtFull(last.slice(0, 10))}.` : 'Connected. Run a sync to pull your data in.')
+    : 'Not connected yet.';
+}
+
 /* ------------------------------------------------------------ history */
 function renderHistory() {
   const s = dailySeries(dataRange()).slice().reverse();
@@ -1786,6 +1886,22 @@ function wire() {
   if (window.api.platform === 'web') {
     document.getElementById('revealData').hidden = true;
   }
+  // --- Oura (desktop only; the PWA has no bridge because of CORS)
+  if (window.api.oura) {
+    document.getElementById('ouraSave').addEventListener('click', async () => {
+      const el = document.getElementById('ouraToken');
+      const token = el.value.trim();
+      if (!token) { toast('Paste a token first'); return; }
+      await window.api.oura.setToken(token);
+      el.value = '';
+      await refreshOuraState();
+      toast('Oura token saved');
+    });
+    document.getElementById('ouraSync').addEventListener('click', () => syncOura(30));
+  } else {
+    document.getElementById('ouraCard').hidden = true;
+  }
+
   document.getElementById('revealData').addEventListener('click', () => window.api.reveal());
 
   document.getElementById('backupJson').addEventListener('click', () => {
@@ -1857,6 +1973,7 @@ function wire() {
 
   wire();
   setType('run');
+  refreshOuraState();
   renderSettings();
   renderAll();
 

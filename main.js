@@ -1,9 +1,10 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
+const { mapWorkout } = require('./lib/oura-map');
 
 const DATA_FILE = () => path.join(app.getPath('userData'), 'trendline-data.json');
 const BACKUP_DIR = () => path.join(app.getPath('userData'), 'backups');
@@ -82,6 +83,53 @@ async function rollBackup(data) {
   } catch (_) { /* backups are best-effort */ }
 }
 
+/* ---------------------------------------------------------------- Oura
+
+   The Oura API sends no Access-Control-Allow-Origin, so a browser blocks it.
+   Fetching from the main process sidesteps CORS entirely, which is why this
+   only exists in the desktop build.
+
+   The token is a long-lived credential, so it is encrypted with the OS
+   keychain rather than sitting in plain text next to the weigh-ins. */
+
+const TOKEN_FILE = () => path.join(app.getPath('userData'), 'oura-token.bin');
+
+function saveToken(token) {
+  const file = TOKEN_FILE();
+  if (!token) {
+    try { fs.unlinkSync(file); } catch (_) { /* already gone */ }
+    return true;
+  }
+  const buf = safeStorage.isEncryptionAvailable()
+    ? safeStorage.encryptString(token)
+    : Buffer.from(`plain:${token}`, 'utf8');
+  fs.writeFileSync(file, buf);
+  return true;
+}
+
+function readToken() {
+  try {
+    const buf = fs.readFileSync(TOKEN_FILE());
+    const asText = buf.toString('utf8');
+    if (asText.startsWith('plain:')) return asText.slice(6);
+    return safeStorage.decryptString(buf);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function ouraGet(endpoint, token, params) {
+  const url = new URL(`https://api.ouraring.com/v2/usercollection/${endpoint}`);
+  Object.entries(params || {}).forEach(([k, v]) => url.searchParams.set(k, v));
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (res.status === 401) throw new Error('Oura rejected the token. Check it in Settings.');
+  if (res.status === 429) throw new Error('Oura rate limit hit. Try again in a minute.');
+  if (!res.ok) throw new Error(`Oura returned ${res.status}`);
+  const body = await res.json();
+  return Array.isArray(body.data) ? body.data : [];
+}
+
+
 let win = null;
 
 function createWindow() {
@@ -123,6 +171,30 @@ app.whenReady().then(() => {
   ipcMain.handle('data:backup', async (_e, data) => {
     await rollBackup(data);
     return true;
+  });
+
+  ipcMain.handle('oura:setToken', (_e, token) => saveToken(token));
+  ipcMain.handle('oura:hasToken', () => !!readToken());
+
+  ipcMain.handle('oura:sync', async (_e, { startDate, endDate }) => {
+    const token = readToken();
+    if (!token) return { ok: false, error: 'No Oura token saved yet.' };
+    try {
+      const range = { start_date: startDate, end_date: endDate };
+      const [activity, workouts] = await Promise.all([
+        ouraGet('daily_activity', token, range),
+        ouraGet('workout', token, range),
+      ]);
+      return {
+        ok: true,
+        steps: activity
+          .filter((a) => a.day && typeof a.steps === 'number')
+          .map((a) => ({ date: a.day, steps: a.steps })),
+        workouts: workouts.filter((w) => w.day && w.id).map(mapWorkout),
+      };
+    } catch (err) {
+      return { ok: false, error: err.message || String(err) };
+    }
   });
 
   ipcMain.handle('data:reveal', () => {

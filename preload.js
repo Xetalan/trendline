@@ -11,4 +11,11 @@ contextBridge.exposeInMainWorld('api', {
   reveal: () => ipcRenderer.invoke('data:reveal'),
   exportFile: (defaultName, contents) =>
     ipcRenderer.invoke('file:export', { defaultName, contents }),
+
+  // Oura lives in the main process because its API sends no CORS headers.
+  oura: {
+    setToken: (token) => ipcRenderer.invoke('oura:setToken', token),
+    hasToken: () => ipcRenderer.invoke('oura:hasToken'),
+    sync: (range) => ipcRenderer.invoke('oura:sync', range),
+  },
 });

@@ -5,14 +5,15 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "electron tools/smoke.js && electron tools/pace.js && electron tools/workouts.js",
+    "test": "electron tools/smoke.js && electron tools/pace.js && electron tools/workouts.js && electron tools/oura.js",
     "smoke": "electron tools/smoke.js",
     "pace": "electron tools/pace.js",
     "workouts": "electron tools/workouts.js",
     "shots": "electron tools/shot.js",
     "icons": "electron tools/icons.js",
     "build:web": "node tools/build-web.js",
-    "test:web": "electron tools/web-test.js"
+    "test:web": "electron tools/web-test.js",
+    "oura": "electron tools/oura.js"
   },
   "keywords": [],
   "author": "",
