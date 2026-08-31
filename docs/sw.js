@@ -1,8 +1,8 @@
 'use strict';
-const CACHE = 'trendline-20260831194000';
+const CACHE = 'trendline-20260831202358';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './platform-web.js',
-  './oura-map.js', './lib-loads.js', './lib-programme.js', './vendor/chart.umd.js', './manifest.webmanifest',
+  './oura-map.js', './loads.js', './programme.js', './vendor/chart.umd.js', './manifest.webmanifest',
   './oauth.html', './oauth.js',
   './icon-192.png', './icon-512.png', './icon-maskable.png',
 ];

@@ -61,8 +61,9 @@ app.whenReady().then(async () => {
       JSON.stringify(Object.values(plan.week).map((x) => x.type)));
 
     const bench = plan.templates[0].exercises[0];
-    check('bench is 3x10 at 100 a side with a 5 lb bar',
-      bench.sets === 3 && bench.reps === 10 && bench.weight === 100 && bench.base === 5 && bench.perSide,
+    check('bench is 3x10 at 100 a side, both arms, no bar',
+      bench.sets === 3 && bench.reps === 10 && bench.weight === 100
+      && !bench.base && bench.perSide,
       JSON.stringify(bench));
 
     // Every seeded weight must be loadable on the declared equipment.
@@ -98,7 +99,7 @@ app.whenReady().then(async () => {
     check('the workout is logged as a lift', !!logged && logged.notes === 'Chest & Triceps',
       JSON.stringify(logged && { notes: logged.notes, ex: logged.exercises.length }));
     check('sets are stored as total load, not per side',
-      logged.exercises[0].sets[0].weight === 205,
+      logged.exercises[0].sets[0].weight === 200,
       JSON.stringify(logged.exercises[0].sets[0]));
     check('the session is cleared afterwards', !d2.session, JSON.stringify(d2.session));
 

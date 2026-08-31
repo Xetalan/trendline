@@ -1647,26 +1647,39 @@ function renderPlan() {
       </div>
     </div>`;
 
-  // --- templates and what comes next
+  // --- templates: start any of them, and correct the numbers in place
   document.getElementById('planTemplates').innerHTML = (DATA.plan.templates || []).map((tpl) => `
     <div class="card">
       <div class="card-head">
         <span class="card-title">${esc(tpl.name)}</span>
-        <span class="card-note">${tpl.daily ? 'every day' : 'weekly'}</span>
+        <span class="row">
+          <span class="card-note">${tpl.daily ? 'every day' : 'weekly'}</span>
+          <button class="btn ghost sm" data-start="${tpl.id}">Start</button>
+        </span>
       </div>
       <div class="table-scroll"><table><thead><tr>
-        <th class="l">Exercise</th><th class="l">Today</th><th class="l">How to load it</th><th class="l">Next step</th>
+        <th class="l">Exercise</th><th>Sets</th><th>Reps</th>
+        <th>${tpl.bandWork ? 'Bands' : 'Per side'}</th>
+        <th class="l">How to load it</th><th class="l">Next step</th>
       </tr></thead><tbody>
-        ${tpl.exercises.map((ex) => {
+        ${tpl.exercises.map((ex, i) => {
           const step = Loads.suggestProgression(ex, DATA.settings.equipment);
+          const num = (field, value, step2) =>
+            `<input type="number" class="mini" min="0" step="${step2}" value="${value}"
+                    data-edit="${tpl.id}:${i}:${field}" />`;
           return `<tr>
             <td class="l strong">${esc(ex.name)}</td>
-            <td class="l">${esc(exerciseTarget(ex))}</td>
+            <td>${num('sets', ex.sets, 1)}</td>
+            <td>${num('reps', ex.reps, 1)}</td>
+            <td>${ex.bands ? `<span class="muted">${esc(ex.bands.join(' + '))}</span>`
+                            : num('weight', ex.weight, 5)}</td>
             <td class="l muted">${esc(exerciseLoading(ex))}</td>
             <td class="l">${esc(step.text)}</td>
           </tr>`;
         }).join('')}
       </tbody></table></div>
+      ${tpl.bandWork ? '' : `<p class="hint" style="margin-top:10px">Weights are per side —
+        both arms loaded the same. Totals are double.</p>`}
     </div>`).join('');
 }
 
@@ -2180,6 +2193,23 @@ function wire() {
     }
     if (e.target.closest('#sessFinish')) { finishSession(); return; }
     if (e.target.closest('#sessCancel')) { cancelSession(); }
+  });
+
+  // Correcting a target in place: the numbers I seeded are a starting guess,
+  // and the loading hint and next step have to follow whatever you change.
+  document.body.addEventListener('change', (e) => {
+    const el = e.target.closest('[data-edit]');
+    if (!el) return;
+    const [tplId, idx, field] = el.dataset.edit.split(':');
+    const tpl = templateById(tplId);
+    if (!tpl) return;
+    const ex = tpl.exercises[Number(idx)];
+    if (!ex) return;
+    const v = Number(el.value);
+    if (!Number.isFinite(v) || v < 0) return;
+    ex[field] = v;
+    save(true);
+    renderPlan();
   });
 
   document.getElementById('dashFocus').addEventListener('click', (e) => {

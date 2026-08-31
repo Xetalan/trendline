@@ -20,7 +20,7 @@ const VERSION = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
 fs.mkdirSync(path.join(OUT, 'vendor'), { recursive: true });
 
 // ---- shared assets, copied verbatim ---------------------------------------
-for (const rel of ['styles.css', 'app.js', 'platform-web.js', 'lib-loads.js', 'lib-programme.js', 'vendor/chart.umd.js']) {
+for (const rel of ['styles.css', 'app.js', 'platform-web.js', 'vendor/chart.umd.js']) {
   fs.copyFileSync(path.join(SRC, rel), path.join(OUT, rel));
 }
 // Shared with the Electron main process - one mapping, both platforms.
@@ -56,6 +56,9 @@ html = html.replace(
 // window.api must exist before app.js runs.
 // oura-map defines window.OuraMap, which platform-web reads; both must be in
 // place before app.js runs.
+// Flatten the shared library paths for the web bundle.
+html = html.replace('../lib/loads.js', 'loads.js').replace('../lib/programme.js', 'programme.js');
+
 html = html.replace(
   '<script src="vendor/chart.umd.js"></script>',
   '<script src="oura-map.js"></script>\n'
@@ -97,7 +100,7 @@ fs.writeFileSync(path.join(OUT, 'sw.js'), `'use strict';
 const CACHE = 'trendline-${VERSION}';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './platform-web.js',
-  './oura-map.js', './lib-loads.js', './lib-programme.js', './vendor/chart.umd.js', './manifest.webmanifest',
+  './oura-map.js', './loads.js', './programme.js', './vendor/chart.umd.js', './manifest.webmanifest',
   './oauth.html', './oauth.js',
   './icon-192.png', './icon-512.png', './icon-maskable.png',
 ];
