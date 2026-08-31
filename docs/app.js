@@ -1378,6 +1378,298 @@ function renderRecent() {
     : '<div class="empty">Nothing logged yet.</div>';
 }
 
+/* ------------------------------------------------------------ plan
+   A weekly schedule of lifting templates, a session runner that times the
+   workout and ticks off sets, and progression that only advances when you
+   actually hit the target. */
+
+function ensurePlan() {
+  if (!DATA.plan) DATA.plan = Programme.defaultPlan();
+  if (!DATA.settings.equipment) DATA.settings.equipment = { ...Loads.DEFAULT_EQUIPMENT };
+  if (!DATA.plan.templates) DATA.plan.templates = Programme.defaultPlan().templates;
+  if (!DATA.plan.week) DATA.plan.week = Programme.defaultPlan().week;
+}
+
+const templateById = (id) => (DATA.plan.templates || []).find((t) => t.id === id) || null;
+const dailyTemplates = () => (DATA.plan.templates || []).filter((t) => t.daily);
+const planFor = (dow) => (DATA.plan.week && DATA.plan.week[dow]) || { type: 'rest' };
+
+// Target for one exercise, written the way it is performed.
+function exerciseTarget(ex) {
+  if (ex.bands) return `${ex.sets} × ${ex.reps} · ${ex.bands.join(' + ')} bands`;
+  const unit = ex.perSide ? ' a side' : '';
+  const total = ex.perSide ? ` (${(Number(ex.base) || 0) + 2 * ex.weight} total)` : '';
+  return `${ex.sets} × ${ex.reps} at ${ex.weight}${unit}${total}`;
+}
+
+function exerciseLoading(ex) {
+  if (ex.bands) return ex.bands.join(' + ');
+  const load = ex.perSide
+    ? Loads.perSideLoad(ex.weight, DATA.settings.equipment)
+    : Loads.howToLoad(ex.weight, DATA.settings.equipment, ex.base);
+  return load ? Loads.describeLoad(load) : 'not loadable with your current plates';
+}
+
+/* --- the running session ------------------------------------------------ */
+let sessionTick = null;
+
+function startSession(templateId) {
+  const tpl = templateById(templateId);
+  if (!tpl) return;
+  DATA.session = {
+    templateId,
+    startedAt: new Date().toISOString(),
+    done: {},          // exercise index -> array of { reps, weight }
+  };
+  save(true);
+  renderPlan();
+}
+
+function cancelSession() {
+  delete DATA.session;
+  save(true);
+  renderPlan();
+}
+
+function toggleSet(exIdx, setIdx) {
+  const s = DATA.session;
+  if (!s) return;
+  const tpl = templateById(s.templateId);
+  const ex = tpl.exercises[exIdx];
+  const list = s.done[exIdx] || [];
+  if (list[setIdx]) list[setIdx] = null;
+  else list[setIdx] = { reps: ex.reps, weight: ex.weight };
+  s.done[exIdx] = list;
+  save(true);
+
+  // Update in place. Re-rendering the card would detach every other button
+  // mid-tap, so quick successive taps would land on dead elements and be lost.
+  const btn = document.querySelector(`[data-set="${exIdx}:${setIdx}"]`);
+  if (btn) {
+    const isDone = !!list[setIdx];
+    btn.classList.toggle('done', isDone);
+    btn.textContent = isDone ? '✓' : ex.reps;
+  }
+  updateSessionProgress();
+}
+
+function updateSessionProgress() {
+  const s = DATA.session;
+  const tpl = s && templateById(s.templateId);
+  if (!tpl) return;
+  const total = tpl.exercises.reduce((a, e) => a + e.sets, 0);
+  const done = Object.values(s.done).flat().filter(Boolean).length;
+  const fill = document.querySelector('.session .goal-fill');
+  if (fill) fill.style.width = `${total ? (done / total) * 100 : 0}%`;
+  const counter = document.getElementById('sessCount');
+  if (counter) counter.textContent = `${done} of ${total} sets`;
+}
+
+const sessionMinutes = () => {
+  const s = DATA.session;
+  if (!s) return 0;
+  return Math.max(1, Math.round((Date.now() - new Date(s.startedAt).getTime()) / 60000));
+};
+
+/* Progression only advances an exercise when every target set was completed at
+   the target reps. A session where you fell short leaves the numbers alone -
+   otherwise the plan runs away from what you can actually lift. */
+function finishSession() {
+  const s = DATA.session;
+  if (!s) return;
+  const tpl = templateById(s.templateId);
+  if (!tpl) { cancelSession(); return; }
+
+  const exercises = [];
+  const advanced = [];
+
+  tpl.exercises.forEach((ex, i) => {
+    const done = (s.done[i] || []).filter(Boolean);
+    if (!done.length) return;
+    exercises.push({
+      name: ex.name,
+      sets: done.map((d) => ({
+        reps: Number(d.reps) || 0,
+        // Stored as total load so volume maths stays consistent across the app.
+        weight: ex.bands ? 0 : (ex.perSide ? (Number(ex.base) || 0) + 2 * ex.weight : ex.weight),
+      })),
+    });
+
+    const hitTarget = done.length >= ex.sets && done.every((d) => d.reps >= ex.reps);
+    if (!hitTarget) return;
+    const step = Loads.suggestProgression(ex, DATA.settings.equipment);
+    if (step.kind === 'band') { advanced.push(`${ex.name}: ${step.text}`); return; }
+    ex.sets = step.sets;
+    ex.reps = step.reps;
+    if (step.weight != null && !ex.bands) ex.weight = step.weight;
+    advanced.push(`${ex.name} → ${exerciseTarget(ex)}`);
+  });
+
+  if (exercises.length) {
+    DATA.activities.push({
+      id: `s${Date.now()}${Math.random().toString(36).slice(2, 5)}`,
+      date: todayISO(),
+      type: 'lift',
+      minutes: sessionMinutes(),
+      distance: 0,
+      label: '',
+      notes: tpl.name,
+      exercises,
+    });
+  }
+
+  delete DATA.session;
+  save(true);
+  renderAll();
+  toast(advanced.length
+    ? `Logged. ${advanced.length} exercise${advanced.length === 1 ? '' : 's'} moved up.`
+    : 'Workout logged.');
+  if (advanced.length) {
+    const box = document.getElementById('planToday');
+    if (box) {
+      box.insertAdjacentHTML('afterbegin', `
+        <div class="card flag-card" style="border-color:var(--border)">
+          <strong>Next time</strong>
+          <ul>${advanced.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>
+        </div>`);
+    }
+  }
+}
+
+function renderSessionRunner() {
+  const s = DATA.session;
+  const tpl = templateById(s.templateId);
+  const elapsed = Math.floor((Date.now() - new Date(s.startedAt).getTime()) / 1000);
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const ss = String(elapsed % 60).padStart(2, '0');
+
+  const totalSets = tpl.exercises.reduce((a, e) => a + e.sets, 0);
+  const doneSets = Object.values(s.done).flat().filter(Boolean).length;
+
+  return `
+    <div class="card session">
+      <div class="card-head">
+        <span class="card-title">${esc(tpl.name)} — in progress</span>
+        <span class="session-clock">${mm}:${ss}</span>
+      </div>
+      <div class="goal-track" style="margin-bottom:16px">
+        <div class="goal-fill" style="width:${totalSets ? (doneSets / totalSets) * 100 : 0}%"></div>
+      </div>
+      ${tpl.exercises.map((ex, i) => {
+        const done = s.done[i] || [];
+        return `
+        <div class="sess-ex">
+          <div class="sess-ex-head">
+            <strong>${esc(ex.name)}</strong>
+            <span class="card-note">${esc(exerciseTarget(ex))}</span>
+          </div>
+          <div class="hint" style="margin-bottom:7px">${esc(exerciseLoading(ex))}</div>
+          <div class="sess-sets">
+            ${Array.from({ length: ex.sets }, (_, k) => `
+              <button type="button" class="set-btn${done[k] ? ' done' : ''}"
+                      data-set="${i}:${k}">${done[k] ? '✓' : ex.reps}</button>`).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+      <div class="row" style="margin-top:16px">
+        <button class="btn" id="sessFinish">Finish &amp; log</button>
+        <button class="btn ghost" id="sessCancel">Cancel</button>
+        <span class="spacer"></span>
+        <span class="card-note" id="sessCount">${doneSets} of ${totalSets} sets</span>
+      </div>
+    </div>`;
+}
+
+function renderPlan() {
+  ensurePlan();
+  const todayEl = document.getElementById('planToday');
+  if (!todayEl) return;
+
+  clearInterval(sessionTick);
+  sessionTick = null;
+
+  if (DATA.session) {
+    todayEl.innerHTML = renderSessionRunner();
+    // Only the clock needs to tick; re-rendering the whole card would fight
+    // with taps on the set buttons.
+    sessionTick = setInterval(() => {
+      const el = document.querySelector('.session-clock');
+      if (!el) { clearInterval(sessionTick); return; }
+      const s = Math.floor((Date.now() - new Date(DATA.session.startedAt).getTime()) / 1000);
+      el.textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+    }, 1000);
+  } else {
+    const dow = new Date().getDay();
+    const p = planFor(dow);
+    const tpl = p.type === 'lift' ? templateById(p.templateId) : null;
+    const label = p.type === 'lift' && tpl ? tpl.name
+      : p.type === 'run' ? 'Run day'
+      : 'Rest day';
+    todayEl.innerHTML = `
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Today — ${Programme.DAY_NAMES[dow]}</span>
+          <span class="card-note">${esc(label)}</span>
+        </div>
+        ${tpl ? `
+          <div class="hint" style="margin-bottom:12px">${tpl.exercises.length} exercises · `
+            + `${tpl.exercises.reduce((a, e) => a + e.sets, 0)} sets</div>
+          <button class="btn" data-start="${tpl.id}">Start workout</button>`
+        : p.type === 'run' ? '<p class="hint">Scheduled run. Log it from Log Today.</p>'
+        : '<p class="hint">Nothing scheduled. Rest is part of the plan.</p>'}
+        ${dailyTemplates().map((d) => `
+          <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+            <div class="card-head" style="margin-bottom:8px">
+              <span class="card-title">${esc(d.name)}</span>
+              <span class="card-note">every day</span>
+            </div>
+            <button class="btn ghost sm" data-start="${d.id}">Start</button>
+          </div>`).join('')}
+      </div>`;
+  }
+
+  // --- the week
+  document.getElementById('planWeek').innerHTML = `
+    <div class="card">
+      <div class="card-head"><span class="card-title">Your week</span></div>
+      <div class="week-grid">
+        ${[1, 2, 3, 4, 5, 6, 0].map((d) => {
+          const p = planFor(d);
+          const tpl = p.type === 'lift' ? templateById(p.templateId) : null;
+          const isToday = d === new Date().getDay();
+          return `
+            <div class="week-day${isToday ? ' today' : ''}">
+              <div class="week-name">${Programme.DAY_NAMES[d].slice(0, 3)}</div>
+              <div class="week-what ${p.type}">${p.type === 'lift' && tpl ? esc(tpl.name)
+                : p.type === 'run' ? 'Run' : 'Rest'}</div>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+  // --- templates and what comes next
+  document.getElementById('planTemplates').innerHTML = (DATA.plan.templates || []).map((tpl) => `
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">${esc(tpl.name)}</span>
+        <span class="card-note">${tpl.daily ? 'every day' : 'weekly'}</span>
+      </div>
+      <div class="table-scroll"><table><thead><tr>
+        <th class="l">Exercise</th><th class="l">Today</th><th class="l">How to load it</th><th class="l">Next step</th>
+      </tr></thead><tbody>
+        ${tpl.exercises.map((ex) => {
+          const step = Loads.suggestProgression(ex, DATA.settings.equipment);
+          return `<tr>
+            <td class="l strong">${esc(ex.name)}</td>
+            <td class="l">${esc(exerciseTarget(ex))}</td>
+            <td class="l muted">${esc(exerciseLoading(ex))}</td>
+            <td class="l">${esc(step.text)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody></table></div>
+    </div>`).join('');
+}
+
 /* ------------------------------------------------------------ food
    Deliberately not a calorie tracker: free text, one line per thing eaten,
    stored on the day alongside the weigh-in. */
@@ -1818,6 +2110,7 @@ function renderAll() {
   renderDashboard();
   renderTraining();
   renderWorkouts();
+  renderPlan();
   renderFood();
   renderFoodToday();
   renderHistory();
@@ -1874,6 +2167,20 @@ function saveWeighin(date, weight, steps, notes) {
 function wire() {
   document.querySelectorAll('.nav-item').forEach((b) =>
     b.addEventListener('click', () => show(b.dataset.nav)));
+
+  // --- training plan / session runner
+  document.body.addEventListener('click', (e) => {
+    const start = e.target.closest('[data-start]');
+    if (start) { startSession(start.dataset.start); return; }
+    const set = e.target.closest('[data-set]');
+    if (set) {
+      const [i, k] = set.dataset.set.split(':').map(Number);
+      toggleSet(i, k);
+      return;
+    }
+    if (e.target.closest('#sessFinish')) { finishSession(); return; }
+    if (e.target.closest('#sessCancel')) { cancelSession(); }
+  });
 
   document.getElementById('dashFocus').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-focus]');
@@ -2170,6 +2477,7 @@ function wire() {
 /* ------------------------------------------------------------ init */
 (async function init() {
   DATA = await window.api.load();
+  ensurePlan();
   applyTheme();
   window.api.backup(DATA);
 

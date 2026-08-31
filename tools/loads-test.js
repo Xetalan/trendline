@@ -53,20 +53,42 @@ eq('base can be inferred from a known lift', L.inferBase(205, EQ), 5);
 const midRange = L.suggestProgression({ sets: 3, reps: 10, weight: 205, base: 5 }, EQ);
 eq('mid-range adds a rep before weight', [midRange.kind, midRange.reps], ['reps', 11]);
 
-const topRange = L.suggestProgression({ sets: 3, reps: 12, weight: 205, base: 5 }, EQ);
-eq('top of range steps the weight up', [topRange.kind, topRange.weight, topRange.reps],
-  ['weight', 215, 8]);
-check('the step tells you how to load it', /50 \+ 30 \+ 10 \+ 10 \+ 5 per side/.test(topRange.text),
-  topRange.text);
+// Top of the rep range adds a SET before it touches the weight: the smallest
+// jump available is 5 lb a side, which is a lot on a small lift.
+const topReps = L.suggestProgression({ sets: 3, reps: 12, weight: 205, base: 5 }, EQ);
+eq('top of the rep range adds a set first', [topReps.kind, topReps.sets, topReps.reps],
+  ['sets', 4, 8]);
 
-const perSideStep = L.suggestProgression({ sets: 3, reps: 12, weight: 80, perSide: true }, EQ);
+const topSets = L.suggestProgression({ sets: 4, reps: 12, weight: 205, base: 5 }, EQ);
+eq('only at max sets does the weight move',
+  [topSets.kind, topSets.weight, topSets.reps, topSets.sets], ['weight', 215, 8, 3]);
+check('the step tells you how to load it', /50 \+ 30 \+ 10 \+ 10 \+ 5 per side/.test(topSets.text),
+  topSets.text);
+
+const perSideStep = L.suggestProgression({ sets: 4, reps: 12, weight: 80, perSide: true }, EQ);
 eq('per-side exercise steps 5 lb a side', [perSideStep.weight, perSideStep.perSide], [85, true]);
 check('per-side wording says "a side"', / a side/.test(perSideStep.text), perSideStep.text);
 
+// The whole cycle, which is the part that has to feel gradual.
+const cycle = L.progressionLadder({ sets: 3, reps: 10, weight: 100, perSide: true, base: 5 }, EQ, 8);
+eq('the cycle runs reps, then a set, then weight', cycle.map((x) => x.kind),
+  ['reps', 'reps', 'sets', 'reps', 'reps', 'reps', 'reps', 'weight']);
+eq('and lands one rung heavier at the bottom of the range',
+  [cycle[7].weight, cycle[7].sets, cycle[7].reps], [105, 3, 8]);
+
+// 'reps-weight' skips the added-set stage for anyone wanting to move faster.
+const fast = L.suggestProgression({ sets: 3, reps: 12, weight: 205, base: 5 },
+  EQ, { strategy: 'reps-weight' });
+eq('reps-weight strategy goes straight to weight', [fast.kind, fast.weight], ['weight', 215]);
+
+// Band work has no plate ladder: reps, then another band.
+const bandStep = L.suggestProgression({ sets: 3, reps: 12, weight: 0, bands: ['50-125', '35-85'] }, EQ);
+eq('band work adds a band at the top of the range', bandStep.kind, 'band');
+
 // ---- ceiling ---------------------------------------------------------------
 const maxTotal = L.achievableLoads(EQ, 5).pop();
-const capped = L.suggestProgression({ sets: 3, reps: 12, weight: maxTotal, base: 5 }, EQ);
-eq('at the ceiling it adds a set instead', [capped.kind, capped.sets], ['capped', 4]);
+const capped = L.suggestProgression({ sets: 4, reps: 12, weight: maxTotal, base: 5 }, EQ);
+eq('at the ceiling it adds a set instead', [capped.kind, capped.sets], ['capped', 5]);
 
 // ---- equipment changes flow through ----------------------------------------
 const noCables = { ...EQ, cablesEnabled: false };

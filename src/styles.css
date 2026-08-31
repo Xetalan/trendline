@@ -932,3 +932,82 @@ td.muted { color: var(--text-muted); }
   border: 3px solid var(--plane);
 }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ------------------------------------------------------------ plan */
+.week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+.week-day {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 6px;
+  text-align: center;
+  background: var(--surface-sunk);
+}
+.week-day.today {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+.week-name {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.week-what {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.week-what.rest { color: var(--text-muted); font-weight: 500; }
+.week-what.run { color: var(--series-1); }
+.week-what.lift { color: var(--series-4); }
+
+/* --- session runner */
+.session { border-color: var(--accent); }
+.session-clock {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.sess-ex { padding: 12px 0; border-bottom: 1px solid var(--gridline); }
+.sess-ex:last-of-type { border-bottom: 0; }
+.sess-ex-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 3px;
+}
+.sess-sets { display: flex; flex-wrap: wrap; gap: 8px; }
+.set-btn {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  min-width: 52px;
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.set-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+.set-btn.done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+@media (max-width: 820px) {
+  .week-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .set-btn { min-width: 56px; min-height: 48px; }
+}

@@ -20,11 +20,13 @@ const VERSION = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
 fs.mkdirSync(path.join(OUT, 'vendor'), { recursive: true });
 
 // ---- shared assets, copied verbatim ---------------------------------------
-for (const rel of ['styles.css', 'app.js', 'platform-web.js', 'vendor/chart.umd.js']) {
+for (const rel of ['styles.css', 'app.js', 'platform-web.js', 'lib-loads.js', 'lib-programme.js', 'vendor/chart.umd.js']) {
   fs.copyFileSync(path.join(SRC, rel), path.join(OUT, rel));
 }
 // Shared with the Electron main process - one mapping, both platforms.
-fs.copyFileSync(path.join(ROOT, 'lib', 'oura-map.js'), path.join(OUT, 'oura-map.js'));
+for (const f of ['oura-map.js', 'loads.js', 'programme.js']) {
+  fs.copyFileSync(path.join(ROOT, 'lib', f), path.join(OUT, f));
+}
 // Icons: the launcher uses native resources on Android, but the manifest and
 // apple-touch-icon links reference these in both builds.
 for (const icon of ['icon-192.png', 'icon-512.png', 'icon-maskable.png']) {
@@ -95,7 +97,7 @@ fs.writeFileSync(path.join(OUT, 'sw.js'), `'use strict';
 const CACHE = 'trendline-${VERSION}';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './platform-web.js',
-  './oura-map.js', './vendor/chart.umd.js', './manifest.webmanifest',
+  './oura-map.js', './lib-loads.js', './lib-programme.js', './vendor/chart.umd.js', './manifest.webmanifest',
   './oauth.html', './oauth.js',
   './icon-192.png', './icon-512.png', './icon-maskable.png',
 ];

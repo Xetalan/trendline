@@ -216,10 +216,17 @@
         </div>
       </div>
       <div class="subtabs" data-tabgroup="training">
-        <button type="button" data-tab="overview" aria-pressed="true">Overview</button>
+        <button type="button" data-tab="plan" aria-pressed="true">Plan</button>
+        <button type="button" data-tab="overview" aria-pressed="false">Overview</button>
         <button type="button" data-tab="sessions" aria-pressed="false">Sessions</button>
       </div>
-      <div class="subview" data-tabgroup="training" data-tab="overview">
+
+      <div class="subview" data-tabgroup="training" data-tab="plan">
+        <div id="planToday"></div>
+        <div id="planWeek"></div>
+        <div id="planTemplates"></div>
+      </div>
+      <div class="subview" data-tabgroup="training" data-tab="overview" hidden>
       <div class="tiles" id="trainTiles"></div>
 
       <div class="card">
@@ -396,6 +403,8 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="lib-loads.js"></script>
+<script src="lib-programme.js"></script>
 <script src="vendor/chart.umd.js"></script>
 <script src="app.js"></script>
 </body>

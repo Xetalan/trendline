@@ -128,78 +128,47 @@
     return ladder.find((w) => w > current + 0.001) ?? null;
   }
 
-  /* Gradual progression across all three axes, easiest first.
-
-     Weight is the blunt instrument here: the smallest jump is 5 lb a side,
-     which on a 30 lb curl is a 17% increase. So reps climb first, then a set
-     is added, and only then does the weight move - at which point reps and
-     sets reset to the bottom and the cycle restarts one rung heavier.
-
-       3x10 -> 3x11 -> 3x12 -> 4x8 -> ... -> 4x12 -> 3x8 at the next weight
-
-     Set the strategy to 'reps-weight' to skip the added-set stage and reach
-     heavier weights roughly twice as fast. */
-  const PROGRESSION_DEFAULTS = { minReps: 8, maxReps: 12, minSets: 3, maxSets: 4, strategy: 'reps-sets-weight' };
-
+  /* Double progression: add reps up to the top of the range first, then add
+     the smallest loadable amount of weight and drop back to the bottom of the
+     range. Weight jumps on this equipment are 10 lb, which is a lot on an
+     isolation lift, so reps do the work in between. */
   function suggestProgression(exercise, eq, opts) {
-    const o = { ...PROGRESSION_DEFAULTS, ...(opts || {}), ...(exercise.progression || {}) };
+    const o = { minReps: 8, maxReps: 12, ...(opts || {}) };
     const base = exercise.base == null ? undefined : exercise.base;
     const perSide = !!exercise.perSide;
     const reps = Number(exercise.reps) || 0;
     const weight = Number(exercise.weight) || 0;
     const sets = Number(exercise.sets) || 0;
-    const unit = perSide ? ' a side' : '';
-    const useSets = o.strategy !== 'reps-weight';
-
-    // Bands have no ladder to climb - reps, then another band.
-    if (exercise.bands) {
-      if (reps < o.maxReps) {
-        return { kind: 'reps', sets, reps: reps + 1, weight,
-          text: `Add a rep: ${sets} × ${reps + 1}` };
-      }
-      return { kind: 'band', sets, reps: o.minReps, weight,
-        text: `Add the next band and drop back to ${o.minReps} reps` };
-    }
 
     if (reps < o.maxReps) {
-      return { kind: 'reps', sets, reps: reps + 1, weight,
-        text: `Add a rep: ${sets} × ${reps + 1} at ${weight}${unit}` };
+      return {
+        kind: 'reps',
+        sets,
+        reps: reps + 1,
+        weight,
+        text: `Add a rep: ${sets} × ${reps + 1} at ${weight} lbs`,
+      };
     }
-
-    if (useSets && sets < o.maxSets) {
-      return { kind: 'sets', sets: sets + 1, reps: o.minReps, weight,
-        text: `Add a set: ${sets + 1} × ${o.minReps} at ${weight}${unit}` };
+    const next = nextLoad(weight, eq, base, perSide);
+    if (next == null) {
+      return {
+        kind: 'capped',
+        sets: sets + 1,
+        reps,
+        weight,
+        text: `You are at the top of what this equipment loads — add a set: ${sets + 1} × ${reps}`,
+      };
     }
-
-    const nextWeight = nextLoad(weight, eq, base, perSide);
-    if (nextWeight == null) {
-      return { kind: 'capped', sets: sets + 1, reps, weight,
-        text: `Top of what this equipment loads — add a set: ${sets + 1} × ${reps}` };
-    }
-    const load = perSide ? perSideLoad(nextWeight, eq) : howToLoad(nextWeight, eq, base);
+    const load = perSide ? perSideLoad(next, eq) : howToLoad(next, eq, base);
     return {
       kind: 'weight',
-      sets: o.minSets,
+      sets,
       reps: o.minReps,
-      weight: nextWeight,
+      weight: next,
       load,
       perSide,
-      text: `Go up to ${nextWeight}${unit} — back to ${o.minSets} × ${o.minReps} — ${describeLoad(load)}`,
+      text: `Go up to ${next} lbs${perSide ? ' a side' : ''} and drop to ${o.minReps} reps — ${describeLoad(load)}`,
     };
-  }
-
-  // The next few steps, so the pace of progression is visible rather than
-  // something you discover months later.
-  function progressionLadder(exercise, eq, count, opts) {
-    const steps = [];
-    let cur = { ...exercise };
-    for (let i = 0; i < (count || 6); i++) {
-      const s = suggestProgression(cur, eq, opts);
-      steps.push(s);
-      if (s.kind === 'capped' || s.kind === 'band') break;
-      cur = { ...cur, sets: s.sets, reps: s.reps, weight: s.weight };
-    }
-    return steps;
   }
 
   // Is this weight actually loadable? Used to flag numbers that do not line up
@@ -216,8 +185,6 @@
 
   return {
     DEFAULT_EQUIPMENT,
-    PROGRESSION_DEFAULTS,
-    progressionLadder,
     perSideLadder,
     perSideLoad,
     isLoadable,
