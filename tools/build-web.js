@@ -62,6 +62,13 @@ html = html.replace(
 
 fs.writeFileSync(path.join(OUT, 'index.html'), html, 'utf8');
 
+// ---- OAuth callback page (hosted build only; it is a redirect target) ------
+if (!MOBILE) {
+  for (const f of ['oauth.html', 'oauth.js']) {
+    fs.copyFileSync(path.join(SRC, f), path.join(OUT, f));
+  }
+}
+
 // ---- manifest -------------------------------------------------------------
 fs.writeFileSync(path.join(OUT, 'manifest.webmanifest'), JSON.stringify({
   name: 'Trendline',
@@ -89,6 +96,7 @@ const CACHE = 'trendline-${VERSION}';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './platform-web.js',
   './oura-map.js', './vendor/chart.umd.js', './manifest.webmanifest',
+  './oauth.html', './oauth.js',
   './icon-192.png', './icon-512.png', './icon-maskable.png',
 ];
 
