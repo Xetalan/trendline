@@ -1733,13 +1733,20 @@ let audioCtx = null;
 let wakeLock = null;
 let lastCue = { step: -1, count: -1 };
 
+// Every cue can be turned off independently: some people want the voice, some
+// only the beeps, some just the countdown into a change.
+const CUE_DEFAULTS = { cueVoice: true, cueBeep: true, cueCount: true, cueRemaining: true };
+const cueOn = (k) => (DATA.settings[k] === undefined ? CUE_DEFAULTS[k] : !!DATA.settings[k]);
+
 function ensureRunState() {
   if (!DATA.running) DATA.running = { completed: [] };
   if (!Array.isArray(DATA.running.completed)) DATA.running.completed = [];
 }
 
-function beep(freq, ms, delay) {
-  if (!audioCtx) return;
+// `force` is for the countdown ticks, which have their own setting and so must
+// not be gated behind the transition-beep one.
+function beep(freq, ms, delay, force) {
+  if (!audioCtx || (!force && !cueOn('cueBeep'))) return;
   try {
     const t = audioCtx.currentTime + (delay || 0);
     const osc = audioCtx.createOscillator();
@@ -1803,7 +1810,7 @@ function pickVoice() {
 
 function say(text) {
   try {
-    if (!window.speechSynthesis) return;
+    if (!window.speechSynthesis || !cueOn('cueVoice')) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     // Assigning a voice can throw if the engine hands back something odd.
@@ -1814,7 +1821,7 @@ function say(text) {
       if (v) { u.voice = v; u.lang = v.lang; }
     } catch (_) { /* fall back to the system default voice */ }
     u.rate = Number(DATA && DATA.settings.voiceRate) || 1;
-    u.pitch = 1;
+    u.pitch = Number(DATA && DATA.settings.voicePitch) || 1;
     u.volume = 1;
     window.speechSynthesis.speak(u);
   } catch (_) { /* voice is optional */ }
@@ -1839,6 +1846,12 @@ function renderVoicePicker() {
     .join('');
   const rate = document.getElementById('voiceRate');
   if (rate) rate.value = Number(DATA.settings.voiceRate) || 1;
+  const pitch = document.getElementById('voicePitch');
+  if (pitch) pitch.value = Number(DATA.settings.voicePitch) || 1;
+  ['cueVoice', 'cueBeep', 'cueCount', 'cueRemaining'].forEach((id) => {
+    const box = document.getElementById(id);
+    if (box) box.checked = cueOn(id);
+  });
 }
 
 async function keepAwake(on) {
@@ -2053,14 +2066,17 @@ function runCues(pos) {
       const mins = pos.step.seconds >= 60
         ? `${Math.round(pos.step.seconds / 60)} minute${pos.step.seconds >= 120 ? 's' : ''}`
         : `${pos.step.seconds} seconds`;
-      const tail = runsLeft === 1 ? 'Last one.' : `${runsLeft - 1} more after this.`;
-      say(`Run for ${mins}. ${tail}`);
+      const tail = !cueOn('cueRemaining') ? ''
+        : runsLeft === 1 ? ' Last one.' : ` ${runsLeft - 1} more after this.`;
+      say(`Run for ${mins}.${tail}`);
     } else if (pos.step.type === 'walk') {
       beep(587, 220);
       const mins = pos.step.seconds >= 60
         ? `${Math.round(pos.step.seconds / 60)} minute${pos.step.seconds >= 120 ? 's' : ''}`
         : `${pos.step.seconds} seconds`;
-      say(`Walk for ${mins}. ${runsLeft} run${runsLeft === 1 ? '' : 's'} to go.`);
+      const left = cueOn('cueRemaining')
+        ? ` ${runsLeft} run${runsLeft === 1 ? '' : 's'} to go.` : '';
+      say(`Walk for ${mins}.${left}`);
     } else if (pos.step.type === 'cooldown') {
       beep(587, 220); beep(440, 300, 0.24);
       say('Cool down. Walk it out for five minutes.');
@@ -2070,9 +2086,9 @@ function runCues(pos) {
 
   // Three, two, one into the next interval.
   const secsLeft = Math.ceil(pos.left);
-  if (secsLeft <= 3 && secsLeft > 0 && secsLeft !== lastCue.count) {
+  if (cueOn('cueCount') && secsLeft <= 3 && secsLeft > 0 && secsLeft !== lastCue.count) {
     lastCue.count = secsLeft;
-    beep(660, 90);
+    beep(660, 90, 0, true);
   }
 
   // Halfway through anything long enough for it to mean something.
@@ -2988,8 +3004,26 @@ function wire() {
     save(true);
     say('Run for 90 seconds. Three more after this.');
   });
-  document.getElementById('voiceTest').addEventListener('click', () =>
-    say('Run for 90 seconds. Three more after this. Last one coming up.'));
+  document.getElementById('voicePitch').addEventListener('change', (e) => {
+    const v = Number(e.target.value);
+    DATA.settings.voicePitch = Number.isFinite(v) && v > 0 ? v : 1;
+    save(true);
+    say('Run for 90 seconds. Three more after this.');
+  });
+  document.getElementById('voiceTest').addEventListener('click', () => {
+    beep(988, 130); beep(1319, 200, 0.16);
+    say('Run for 90 seconds. Three more after this. Last one coming up.');
+  });
+
+  ['cueVoice', 'cueBeep', 'cueCount', 'cueRemaining'].forEach((id) => {
+    const box = document.getElementById(id);
+    box.addEventListener('change', () => {
+      DATA.settings[id] = box.checked;
+      save(true);
+      if (id === 'cueVoice' && box.checked) say('Voice cues on.');
+      if (id === 'cueBeep' && box.checked) { beep(988, 130); beep(1319, 200, 0.16); }
+    });
+  });
 
   renderVoicePicker();
   if (window.speechSynthesis) {

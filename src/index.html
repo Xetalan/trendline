@@ -361,11 +361,24 @@
           <span class="card-title">Coaching voice</span>
           <span class="card-note">Used during runs</span>
         </div>
-        <div class="form-row" style="grid-template-columns:1fr 120px auto">
+        <div class="form-row" style="grid-template-columns:1fr 110px 110px auto">
           <label class="field">Voice<select id="voiceSel"></select></label>
           <label class="field">Speed<input type="number" id="voiceRate" step="0.05" min="0.6" max="1.6" /></label>
+          <label class="field">Pitch<input type="number" id="voicePitch" step="0.05" min="0.5" max="1.5" /></label>
           <button class="btn ghost" id="voiceTest">Test</button>
         </div>
+
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="cueVoice" />
+            <span>Speak the intervals</span></label>
+          <label class="check"><input type="checkbox" id="cueBeep" />
+            <span>Beep on every change</span></label>
+          <label class="check"><input type="checkbox" id="cueCount" />
+            <span>Tick the last three seconds</span></label>
+          <label class="check"><input type="checkbox" id="cueRemaining" />
+            <span>Say how many runs are left</span></label>
+        </div>
+
         <p class="hint" style="margin-top:10px">
           Picks the best female English voice your device has. Voices marked
           <strong>needs data</strong> sound better but will not speak without a signal —

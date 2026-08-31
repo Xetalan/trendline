@@ -1125,3 +1125,30 @@ input.mini {
   .split-row .field { grid-area: sp; }
   .split-dist { grid-area: dist; }
 }
+
+/* ------------------------------------------------------------ checkboxes */
+.checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px 18px;
+  margin-top: 14px;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+}
+.check input {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  accent-color: var(--accent);
+  margin: 0;
+  cursor: pointer;
+}
+.check:hover { color: var(--text-primary); }

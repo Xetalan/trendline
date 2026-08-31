@@ -151,6 +151,75 @@ app.whenReady().then(async () => {
     check('a rejected voice still speaks the cue',
       fallback && /ninety/.test(fallback.text || ''), JSON.stringify(fallback));
 
+    // ---- each cue can be turned off independently -----------------------
+    const spoke = () => run(`(() => {
+      let said = null;
+      const real = window.speechSynthesis.speak;
+      const realU = window.SpeechSynthesisUtterance;
+      window.SpeechSynthesisUtterance = function (t) { this.text = t; };
+      window.speechSynthesis.speak = (u) => { said = u.text; };
+      say('cue');
+      window.speechSynthesis.speak = real;
+      window.SpeechSynthesisUtterance = realU;
+      return said; })()`);
+
+    check('cues speak by default', (await spoke()) === 'cue', 'silent');
+    await run(`DATA.settings.cueVoice = false; true;`);
+    check('turning the voice off silences it', (await spoke()) === null, 'still spoke');
+    await run(`DATA.settings.cueVoice = true; true;`);
+
+    // The countdown ticks have their own setting and must survive the
+    // transition beeps being switched off.
+    const beeped = (force) => run(`(() => {
+      let n = 0;
+      const realCtx = audioCtx;
+      audioCtx = { currentTime: 0, destination: {},
+        createOscillator: () => ({ frequency: {}, connect: () => ({ connect: () => {} }),
+          start: () => { n++; }, stop: () => {} }),
+        createGain: () => ({ gain: { setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {} },
+          connect: () => ({ connect: () => {} }) }) };
+      beep(660, 90, 0, ${force ? 'true' : 'false'});
+      audioCtx = realCtx;
+      return n; })()`);
+
+    await run(`DATA.settings.cueBeep = false; true;`);
+    check('turning beeps off silences transition beeps', (await beeped(false)) === 0, 'still beeped');
+    check('but the countdown tick still fires', (await beeped(true)) === 1, 'countdown lost');
+    await run(`DATA.settings.cueBeep = true; true;`);
+
+    // Runs-remaining wording is optional.
+    await run(`DATA.settings.cueRemaining = false; DATA.settings.cueVoice = true; true;`);
+    const plain = await run(`(() => {
+      let said = null;
+      const realU = window.SpeechSynthesisUtterance;
+      const real = window.speechSynthesis.speak;
+      window.SpeechSynthesisUtterance = function (t) { this.text = t; };
+      window.speechSynthesis.speak = (u) => { said = u.text; };
+      DATA.run = { key: '1:1', startedAt: new Date(Date.now() - 310000).toISOString(), pausedMs: 0, pausedAt: null };
+      lastCue = { step: -1, count: -1 };
+      runCues(runPosition());
+      delete DATA.run;
+      window.speechSynthesis.speak = real;
+      window.SpeechSynthesisUtterance = realU;
+      return said; })()`);
+    check('with runs-remaining off the cue is just the interval',
+      plain && /^Run for/.test(plain) && !/more after|Last one/.test(plain), JSON.stringify(plain));
+    await run(`DATA.settings.cueRemaining = true; true;`);
+
+    // Pitch reaches the utterance.
+    const pitched = await run(`(() => {
+      let p = null;
+      const realU = window.SpeechSynthesisUtterance;
+      const real = window.speechSynthesis.speak;
+      window.SpeechSynthesisUtterance = function (t) { this.text = t; };
+      window.speechSynthesis.speak = (u) => { p = u.pitch; };
+      DATA.settings.voicePitch = 0.9;
+      say('x');
+      window.speechSynthesis.speak = real;
+      window.SpeechSynthesisUtterance = realU;
+      return p; })()`);
+    check('pitch is applied', pitched === 0.9, String(pitched));
+
     // No voices at all must not throw.
     await run(`window.speechSynthesis.getVoices = () => []; renderVoicePicker(); say('nothing'); true;`);
     check('a device with no voices degrades quietly',

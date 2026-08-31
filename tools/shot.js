@@ -100,7 +100,7 @@ app.whenReady().then(async () => {
     `DATA.settings.theme = ${JSON.stringify(theme)}; applyTheme(); renderAll(); true;`);
   await new Promise((r) => setTimeout(r, 1200));
 
-  for (const view of ['dashboard', 'training', 'log', 'history']) {
+  for (const view of ['dashboard', 'training', 'log', 'history', 'settings']) {
     await win.webContents.executeJavaScript(`show(${JSON.stringify(view)}); true;`);
     await new Promise((r) => setTimeout(r, 1000));
     const img = await win.webContents.capturePage();
