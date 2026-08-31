@@ -34,6 +34,10 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
       Log Today
     </button>
+    <button class="nav-item" data-nav="food">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v8a2.5 2.5 0 0 0 5 0V3M8.5 11v10"/><path d="M17.5 3c-1.5 2-2 4-2 6.5 0 1.4.7 2.5 2 2.5V3zM17.5 12v9"/></svg>
+      Food
+    </button>
     <button class="nav-item" data-nav="training">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11"/></svg>
       Training
@@ -75,6 +79,7 @@
 
       <div class="tiles" id="dashTiles"></div>
       <div id="goalCard"></div>
+      <div id="recapCard"></div>
       <div id="distanceCard"></div>
 
       <div class="card">
@@ -134,6 +139,19 @@
       </div>
 
       <div class="card">
+        <div class="card-head">
+          <span class="card-title">Food</span>
+          <span class="card-note">Today, quickly</span>
+        </div>
+        <div class="form-row" style="grid-template-columns:1fr auto">
+          <label class="field">What did you have?<input type="text" id="fQuick"
+                 placeholder="Add a meal or snack and press Enter" /></label>
+          <button class="btn" id="fQuickAdd">Add</button>
+        </div>
+        <div id="foodToday" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card">
         <div class="card-head"><span class="card-title">Add a workout</span></div>
 
         <div class="row" style="margin-bottom:14px">
@@ -188,6 +206,36 @@
       </div>
     </section>
 
+    <!-- ---------------------------------------------- FOOD -->
+    <section class="view" id="view-food">
+      <div class="view-head">
+        <div>
+          <h1>Food</h1>
+          <p class="view-sub">A running note of what you ate. No counting, no macros — just jot it down.</p>
+        </div>
+        <button class="btn ghost sm" id="exportFood">Export CSV</button>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">Add an entry</span></div>
+        <div class="form-row" style="grid-template-columns:150px 1fr auto">
+          <label class="field">Date<input type="date" id="fDate" /></label>
+          <label class="field">What did you have?<input type="text" id="fText"
+                 placeholder="Greek yoghurt and berries · chicken bowl · two squares of dark chocolate" /></label>
+          <button class="btn" id="fAdd">Add</button>
+        </div>
+        <p class="hint" style="margin-top:10px">Press Enter to add and keep typing — handy for logging a whole day in one go.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Journal</span>
+          <input type="text" id="fSearch" placeholder="Search entries…" style="max-width:220px" />
+        </div>
+        <div id="foodList"></div>
+      </div>
+    </section>
+
     <!-- ---------------------------------------------- TRAINING -->
     <section class="view" id="view-training">
       <div class="view-head">
@@ -226,6 +274,8 @@
           <div class="chart-box"><canvas id="chartTonnage"></canvas></div>
         </div>
       </div>
+
+      <div id="prCard"></div>
 
       <div class="card">
         <div class="card-head">

@@ -12,13 +12,15 @@ const ROOT = path.join(__dirname, '..');
 function demo() {
   const days = {};
   const activities = [];
-  const startISO = '2026-01-05';
-  const d0 = new Date(2026, 0, 5);
+  // Anchor the fixture to today so screenshots show a live-looking chart.
+  const d0 = new Date();
+  d0.setDate(d0.getDate() - 44);
+  const startISO = `${d0.getFullYear()}-${String(d0.getMonth()+1).padStart(2,"0")}-${String(d0.getDate()).padStart(2,"0")}`;
   days[startISO] = { weight: 250, steps: null, notes: "Starting weight" };
 
   const wave = [0, -0.4, 0.5, -0.9, 0.3, -0.2, 0.6];
   let w = 247;
-  for (let i = 4; i <= 40; i++) {           // a couple of months of data
+  for (let i = 4; i <= 44; i++) {           // a couple of months of data
     const d = new Date(d0.getTime());
     d.setDate(d.getDate() + i);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

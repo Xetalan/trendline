@@ -37,6 +37,7 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const fmtShort = (s) => { const d = parseISO(s); return `${MON[d.getMonth()]} ${d.getDate()}`; };
 const fmtFull = (s) => { const d = parseISO(s); return `${DOW[d.getDay()]}, ${MON[d.getMonth()]} ${d.getDate()}`; };
+const fmtLong = (s) => { const d = parseISO(s); return `${MON[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`; };
 
 /* ------------------------------------------------------------ format */
 const n1 = (v) => (v == null || Number.isNaN(v) ? '—' : v.toFixed(1));
@@ -199,6 +200,110 @@ function distanceTotals(from) {
   return out;
 }
 
+// Weekly rate from a least-squares fit over recent weekly averages. Reading
+// "first vs last" instead would swing wildly on a single noisy week.
+// Negative means losing.
+function trendRate() {
+  const pts = weeklyWeight().filter((w) => w.avg != null).slice(-6);
+  if (pts.length < 2) return null;
+  const n = pts.length;
+  const my = pts.reduce((a, w) => a + w.avg, 0) / n;
+  const mx = (n - 1) / 2;
+  let num = 0, den = 0;
+  pts.forEach((w, i) => { num += (i - mx) * (w.avg - my); den += (i - mx) ** 2; });
+  return den ? num / den : null;
+}
+
+// Where the current trend lands you, and roughly when.
+function projection() {
+  const goal = DATA.settings.goalWeight;
+  const cur = latestAvg();
+  const rate = trendRate();
+  if (!goal || !cur || rate == null) return null;
+  const perWeek = -rate;                       // positive = losing
+  if (perWeek < 0.05) return null;             // flat or gaining: no honest date
+  const toGo = cur.avg - goal;
+  if (toGo <= 0) return null;                  // already there
+  const weeks = toGo / perWeek;
+  if (weeks > 260) return null;                // too far out to mean anything
+  return { perWeek, weeks, from: cur, date: iso(addDays(parseISO(cur.date), Math.round(weeks * 7))) };
+}
+
+// Consecutive days with a weigh-in. Not having logged *today* yet does not
+// break a streak - it just has not been extended.
+function loggingStreak() {
+  const logged = new Set(weighins().map((w) => w.date));
+  let d = new Date();
+  if (!logged.has(iso(d))) d = addDays(d, -1);
+  let n = 0;
+  while (logged.has(iso(d))) { n++; d = addDays(d, -1); }
+  return n;
+}
+
+function adherence(days) {
+  const logged = new Set(weighins().map((w) => w.date));
+  let hit = 0;
+  for (let k = 0; k < days; k++) if (logged.has(iso(addDays(new Date(), -k)))) hit++;
+  return hit;
+}
+
+// The most recent week that has actually finished - a part-week recap would
+// always read as a bad week.
+function lastCompleteWeek() {
+  const ww = weeklyWeight();
+  const wa = weeklyActivity();
+  const t = todayISO();
+  for (let i = ww.length - 1; i >= 0; i--) {
+    if (ww[i].end < t) return { week: ww[i], act: wa[i] };
+  }
+  return null;
+}
+
+function personalRecords() {
+  const out = [];
+  const acts = DATA.activities;
+
+  DISTANCE_TYPES.forEach((t) => {
+    const list = acts.filter((a) => a.type === t && Number(a.distance) > 0);
+    if (!list.length) return;
+    const best = list.reduce((m, a) => (Number(a.distance) > Number(m.distance) ? a : m));
+    out.push({ label: `Longest ${TYPES[t].label.toLowerCase()}`, value: `${n2(best.distance)} mi`, date: best.date });
+  });
+
+  const runs = acts.filter((a) => a.type === 'run' && a.distance > 0 && a.minutes > 0);
+  if (runs.length) {
+    const fast = runs.reduce((m, a) => (a.minutes / a.distance < m.minutes / m.distance ? a : m));
+    out.push({ label: 'Fastest pace', value: `${paceOf(fast.minutes, fast.distance)} /mi`, date: fast.date });
+  }
+
+  let heaviest = null;
+  acts.filter((a) => a.type === 'lift').forEach((a) =>
+    (a.exercises || []).forEach((ex) => (ex.sets || []).forEach((s) => {
+      if (Number(s.weight) > 0 && (!heaviest || s.weight > heaviest.weight)) {
+        heaviest = { weight: s.weight, reps: s.reps, name: ex.name, date: a.date };
+      }
+    })));
+  if (heaviest) {
+    out.push({ label: 'Heaviest set', value: `${heaviest.weight} × ${heaviest.reps}`,
+      sub: heaviest.name, date: heaviest.date });
+  }
+
+  const lifts = acts.filter((a) => a.type === 'lift');
+  if (lifts.length) {
+    const big = lifts.reduce((m, a) => (tonnageOf(a) > tonnageOf(m) ? a : m));
+    if (tonnageOf(big) > 0) {
+      out.push({ label: 'Biggest session', value: `${int(tonnageOf(big))} lbs`, date: big.date });
+    }
+  }
+
+  const weeks = weeklyActivity().filter((w) => w.groundMi > 0);
+  if (weeks.length) {
+    const bw = weeks.reduce((m, w) => (w.groundMi > m.groundMi ? w : m));
+    out.push({ label: 'Biggest week', value: `${n2(bw.groundMi)} mi`, date: bw.start });
+  }
+  return out;
+}
+
 function tonnageOf(a) {
   if (a.type !== 'lift' || !Array.isArray(a.exercises)) return 0;
   return a.exercises.reduce((sum, ex) => sum +
@@ -311,25 +416,64 @@ function drawWeightChart() {
   const opts = baseOptions();
   if (!s.length) { if (charts.weight) { charts.weight.destroy(); delete charts.weight; } return; }
 
-  const vals = s.flatMap((r) => [r.weight, r.avg]).filter((v) => v != null);
+  // Extend the trend forward as a dashed line. Capped so the projection can
+  // never dominate the real data - a six-month goal would otherwise leave the
+  // actual readings squeezed into a corner.
+  const labels = s.map((r) => fmtShort(r.date));
+  const dailyVals = s.map((r) => r.weight);
+  const avgVals = s.map((r) => r.avg);
+  let projVals = null;
+  const proj = projection();
+  // Anchor to the last day that actually has an average, not the last row -
+  // a gap in logging leaves trailing null rows, and anchoring there would
+  // detach the projection from the line it is supposed to continue.
+  let anchor = -1;
+  for (let i = s.length - 1; i >= 0 && anchor < 0; i--) if (s[i].avg != null) anchor = i;
+
+  if (proj && anchor >= 0) {
+    const days = Math.min(Math.round(proj.weeks * 7), Math.max(28, Math.round(s.length * 0.5)), 84);
+    if (days > 6) {
+      const from = s[anchor].avg;
+      const fromDate = parseISO(s[anchor].date);
+      projVals = new Array(s.length).fill(null);
+      projVals[anchor] = from;
+      for (let k = 1; k <= days; k++) {
+        const value = from - proj.perWeek * (k / 7);
+        const idx = anchor + k;
+        if (idx < s.length) {
+          projVals[idx] = value;            // still within the existing axis
+        } else {
+          labels.push(fmtShort(iso(addDays(fromDate, k))));
+          dailyVals.push(null);
+          avgVals.push(null);
+          projVals.push(value);
+        }
+      }
+    }
+  }
+
+  const vals = [...dailyVals, ...avgVals, ...(projVals || [])].filter((v) => v != null);
   const b = niceBounds(Math.min(...vals), Math.max(...vals));
   opts.scales.y.min = b.min;
   opts.scales.y.max = b.max;
   opts.scales.y.ticks.callback = (v) => v.toFixed(0);
   opts.plugins.tooltip.callbacks = {
-    title: (items) => fmtFull(s[items[0].dataIndex].date),
+    title: (items) => {
+      const i = items[0].dataIndex;
+      return i < s.length ? fmtFull(s[i].date) : `${labels[i]} · projected`;
+    },
     label: (ctx) => ctx.parsed.y == null ? null
-      : `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(ctx.datasetIndex === 1 ? 2 : 1)} lbs`,
+      : `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(ctx.datasetIndex === 0 ? 1 : 2)} lbs`,
   };
 
   draw('weight', 'chartWeight', {
     type: 'line',
     data: {
-      labels: s.map((r) => fmtShort(r.date)),
+      labels,
       datasets: [
         {
           label: 'Daily reading',
-          data: s.map((r) => r.weight),
+          data: dailyVals,
           borderColor: css('--series-faint'),
           backgroundColor: css('--series-faint'),
           borderWidth: 1,
@@ -341,7 +485,7 @@ function drawWeightChart() {
         },
         {
           label: '7-day average',
-          data: s.map((r) => r.avg),
+          data: avgVals,
           borderColor: css('--series-1'),
           backgroundColor: css('--series-1'),
           borderWidth: 2.5,
@@ -352,6 +496,18 @@ function drawWeightChart() {
           spanGaps: true,
           tension: 0.25,
         },
+        ...(projVals ? [{
+          label: 'Projected',
+          data: projVals,
+          borderColor: css('--series-1'),
+          backgroundColor: css('--series-1'),
+          borderWidth: 2,
+          borderDash: [5, 5],
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          spanGaps: true,
+          tension: 0,
+        }] : []),
       ],
     },
     options: opts,
@@ -532,8 +688,11 @@ function renderDashboard() {
   const thisWeek = weeks[weeks.length - 1] || null;
   const prevWeek = weeks[weeks.length - 2] || null;
 
+  const streak = loggingStreak();
   document.getElementById('dashSub').textContent = cur
-    ? `Last weigh-in ${fmtFull(cur.date)}${DATA.settings.medication ? ' · ' + DATA.settings.medication : ''}`
+    ? `Last weigh-in ${fmtFull(cur.date)}`
+      + (streak > 1 ? ` · ${streak}-day streak` : '')
+      + (DATA.settings.medication ? ` · ${DATA.settings.medication}` : '')
     : 'No weigh-ins yet — log one to get started.';
 
   const lost = cur && start != null ? start - cur.weight : null;
@@ -582,6 +741,15 @@ function renderDashboard() {
           <div class="goal-track"><div class="goal-fill" style="width:${pct}%"></div></div>
           <div class="goal-legend"><span>${n1(start)} lbs start</span><span><strong>${pct.toFixed(0)}%</strong></span><span>${n1(goal)} lbs goal</span></div>
         </div>
+        ${(() => {
+          const p = projection();
+          if (!p) {
+            return '<p class="proj muted">Not enough of a downward trend yet to project a date.</p>';
+          }
+          return `<p class="proj">At <strong>${n2(p.perWeek)} lbs a week</strong> you reach ${n1(goal)} lbs around `
+               + `<strong>${fmtLong(p.date)}</strong> — about ${Math.round(p.weeks)} weeks out. `
+               + '<span class="muted">Based on your last six weekly averages; it moves as they do.</span></p>';
+        })()}
       </div>`;
   } else {
     goalEl.innerHTML = '';
@@ -615,6 +783,36 @@ function renderDashboard() {
       </div>`;
   } else {
     distEl.innerHTML = '';
+  }
+
+  // Recap of the last week that actually finished - a part-week always reads
+  // as a bad week.
+  const rec = lastCompleteWeek();
+  const recapEl = document.getElementById('recapCard');
+  if (rec && rec.week.avg != null) {
+    const w = rec.week, a = rec.act;
+    const items = [
+      ['Average', `${n2(w.avg)} lbs`,
+        w.change != null ? `<span class="delta ${deltaClass(w.change)}">${signed(w.change, 2)}</span>` : ''],
+      ['Weigh-ins', `${w.days} of 7`, ''],
+      ['Sessions', int(a.sessions), ''],
+      ['Miles', n2(a.groundMi), ''],
+      ['Lifting', `${int(a.tonnage)} lbs`, ''],
+    ];
+    recapEl.innerHTML = `
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Week ${w.index} recap</span>
+          <span class="card-note">${fmtShort(w.start)} – ${fmtShort(w.end)} · last full week</span>
+        </div>
+        <div class="recap-row">${items.map(([l, v, extra]) => `
+          <div class="recap-item">
+            <div class="recap-label">${l}</div>
+            <div class="recap-value">${v}${extra ? ` ${extra}` : ''}</div>
+          </div>`).join('')}</div>
+      </div>`;
+  } else {
+    recapEl.innerHTML = '';
   }
 
   const wr = weeklyWeight();
@@ -667,6 +865,21 @@ function renderTraining() {
       <div class="tile-value">${esc(t.value)}${t.unit ? `<span class="unit">${t.unit}</span>` : ''}</div>
       <div class="tile-sub">${esc(t.sub)}</div>
     </div>`).join('');
+
+  const prs = personalRecords();
+  document.getElementById('prCard').innerHTML = prs.length ? `
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">Personal records</span>
+        <span class="card-note">Your best so far</span>
+      </div>
+      <div class="pr-grid">${prs.map((p) => `
+        <div class="pr">
+          <div class="pr-label">${esc(p.label)}</div>
+          <div class="pr-value">${esc(p.value)}</div>
+          <div class="pr-sub">${p.sub ? `${esc(p.sub)} · ` : ''}${fmtShort(p.date)}</div>
+        </div>`).join('')}</div>
+    </div>` : '';
 
   drawTrainingCharts();
   renderStrength();
@@ -1011,6 +1224,82 @@ function renderRecent() {
     : '<div class="empty">Nothing logged yet.</div>';
 }
 
+/* ------------------------------------------------------------ food
+   Deliberately not a calorie tracker: free text, one line per thing eaten,
+   stored on the day alongside the weigh-in. */
+function foodOf(date) {
+  const day = DATA.days[date];
+  return day && Array.isArray(day.food) ? day.food : [];
+}
+
+function addFood(date, text) {
+  const t = String(text || '').trim();
+  if (!date || !t) return false;
+  const day = DATA.days[date] || {};
+  if (!Array.isArray(day.food)) day.food = [];
+  day.food.push({ id: `f${Date.now()}${Math.random().toString(36).slice(2, 5)}`, text: t });
+  DATA.days[date] = day;
+  save(true);
+  return true;
+}
+
+function removeFood(date, id) {
+  const day = DATA.days[date];
+  if (!day || !Array.isArray(day.food)) return;
+  day.food = day.food.filter((f) => f.id !== id);
+  if (!day.food.length) delete day.food;
+  // Drop the day entirely if nothing is left on it.
+  if (day.weight == null && day.steps == null && !day.notes && !day.food) delete DATA.days[date];
+  save(true);
+}
+
+function foodEntryList(date, entries) {
+  return `<ul class="food-list">${entries.map((f) => `
+    <li><span>${esc(f.text)}</span>
+      <button type="button" class="btn icon" data-food-del="${f.id}" data-food-date="${date}" title="Remove">×</button>
+    </li>`).join('')}</ul>`;
+}
+
+function renderFoodToday() {
+  const d = todayISO();
+  const entries = foodOf(d);
+  document.getElementById('foodToday').innerHTML = entries.length
+    ? foodEntryList(d, entries)
+    : '<p class="hint">Nothing logged today yet.</p>';
+}
+
+function renderFood() {
+  const q = (document.getElementById('fSearch').value || '').trim().toLowerCase();
+  const days = Object.keys(DATA.days)
+    .filter((d) => foodOf(d).length)
+    .sort()
+    .reverse();
+
+  const rows = days.map((d) => {
+    const entries = q ? foodOf(d).filter((f) => f.text.toLowerCase().includes(q)) : foodOf(d);
+    return entries.length ? { date: d, entries } : null;
+  }).filter(Boolean);
+
+  const el = document.getElementById('foodList');
+  if (!rows.length) {
+    el.innerHTML = `<div class="empty">${q ? 'Nothing matches that.' : 'No entries yet. Add one above.'}</div>`;
+    return;
+  }
+  el.innerHTML = `<div class="food-days">${rows.map((r) => `
+    <div class="food-day">
+      <div class="food-date">${fmtFull(r.date)}${r.date === todayISO() ? ' · today' : ''}</div>
+      ${foodEntryList(r.date, r.entries)}
+    </div>`).join('')}</div>`;
+}
+
+function foodCsv() {
+  const rows = [['Date', 'Day', 'Entry']];
+  Object.keys(DATA.days).sort().forEach((d) => {
+    foodOf(d).forEach((f) => rows.push([d, DOW[parseISO(d).getDay()], f.text]));
+  });
+  return toCsv(rows);
+}
+
 /* ------------------------------------------------------------ history */
 function renderHistory() {
   const s = dailySeries(dataRange()).slice().reverse();
@@ -1267,6 +1556,8 @@ function renderAll() {
   renderDashboard();
   renderTraining();
   renderWorkouts();
+  renderFood();
+  renderFoodToday();
   renderHistory();
   renderRecent();
   refreshExerciseNames();
@@ -1462,6 +1753,35 @@ function wire() {
   document.getElementById('exportWorkouts').addEventListener('click', () =>
     exportCsv('trendline-workouts.csv', activitiesCsv()));
 
+  // --- Food journal
+  const fDate = document.getElementById('fDate');
+  const fText = document.getElementById('fText');
+  const submitFood = (dateEl, textEl) => {
+    const date = dateEl ? (dateEl.value || todayISO()) : todayISO();
+    if (!addFood(date, textEl.value)) { toast('Type something first'); return; }
+    textEl.value = '';
+    textEl.focus();
+    renderAll();
+  };
+  document.getElementById('fAdd').addEventListener('click', () => submitFood(fDate, fText));
+  fText.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitFood(fDate, fText); });
+
+  const fQuick = document.getElementById('fQuick');
+  const quickAdd = () => submitFood(null, fQuick);
+  document.getElementById('fQuickAdd').addEventListener('click', quickAdd);
+  fQuick.addEventListener('keydown', (e) => { if (e.key === 'Enter') quickAdd(); });
+
+  document.getElementById('fSearch').addEventListener('input', renderFood);
+  document.getElementById('exportFood').addEventListener('click', () =>
+    exportCsv('trendline-food.csv', foodCsv()));
+
+  document.body.addEventListener('click', (e) => {
+    const del = e.target.closest('[data-food-del]');
+    if (!del) return;
+    removeFood(del.dataset.foodDate, del.dataset.foodDel);
+    renderAll();
+  });
+
   // No filesystem on the web build - the same button hands over the JSON.
   if (window.api.platform === 'web') {
     document.getElementById('revealData').hidden = true;
@@ -1532,6 +1852,7 @@ function wire() {
 
   const t = todayISO();
   document.getElementById('wDate').value = t;
+  document.getElementById('fDate').value = t;
   document.getElementById('aDate').value = t;
 
   wire();

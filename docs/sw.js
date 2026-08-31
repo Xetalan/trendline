@@ -1,5 +1,5 @@
 'use strict';
-const CACHE = 'trendline-20260831171608';
+const CACHE = 'trendline-20260831173757';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './platform-web.js',
   './vendor/chart.umd.js', './manifest.webmanifest',
