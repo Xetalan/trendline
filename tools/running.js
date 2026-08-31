@@ -199,6 +199,24 @@ app.whenReady().then(async () => {
       d2.activities.length === 2 && d2.running.completed.includes('1:2'),
       JSON.stringify({ n: d2.activities.length, done: d2.running.completed }));
 
+    // Ticking sessions off the grid, for runs already logged by hand.
+    await run(`show('training'); showSubtab('training','plan');
+      document.querySelector('details') && (document.querySelector('details').open = true);
+      true;`);
+    await settle(300);
+    const beforeTick = await run('DATA.activities.length');
+    await run(`document.querySelector('[data-toggle="2:1"]').click(); true;`);
+    await settle(400);
+    let d3 = await run('JSON.parse(JSON.stringify(DATA))');
+    check('ticking a chip marks it done and logs nothing',
+      d3.running.completed.includes('2:1') && d3.activities.length === beforeTick,
+      JSON.stringify({ done: d3.running.completed, n: d3.activities.length }));
+    await run(`document.querySelector('[data-toggle="2:1"]').click(); true;`);
+    await settle(400);
+    d3 = await run('JSON.parse(JSON.stringify(DATA))');
+    check('tapping again un-ticks it', !d3.running.completed.includes('2:1'),
+      JSON.stringify(d3.running.completed));
+
     await settle(300);
     check('the programme now offers run 3',
       /Week 1 · run 3/.test(await run(`document.getElementById('planRun').textContent`)),

@@ -2083,12 +2083,15 @@ function renderRunProgramme(host) {
           </span>
         </div>`
         : '<p class="hint">Programme complete — that is a 10K. Pick any week to run again below.</p>'}
-      <details style="margin-top:14px">
-        <summary class="card-note" style="cursor:pointer">All 45 runs</summary>
+      <details style="margin-top:14px"${done.length ? '' : ' open'}>
+        <summary class="card-note" style="cursor:pointer">All 45 runs — tap to tick off</summary>
+        <p class="hint" style="margin:8px 0 0">Ticking a run off here records no workout, for
+          sessions you already logged yourself. Whatever is left becomes your next run.</p>
         <div class="run-grid">
           ${all.map((r) => `
             <button type="button" class="run-chip${done.includes(r.key) ? ' done' : ''}${next && r.key === next.key ? ' next' : ''}"
-                    data-run="${r.key}" title="${esc(r.label)}">${r.week}.${r.day}</button>`).join('')}
+                    data-toggle="${r.key}"
+                    title="Week ${r.week} run ${r.day} — ${esc(r.label)}">${r.week}.${r.day}</button>`).join('')}
         </div>
       </details>
     </div>`;
@@ -2604,6 +2607,20 @@ function wire() {
     }
     const runStart = e.target.closest('[data-run]');
     if (runStart) { startRun(runStart.dataset.run); return; }
+    // Ticking a run off the grid records nothing - it is for sessions already
+    // logged by hand. Next-up is derived from completion, so this is also how
+    // you jump around the programme.
+    const toggle = e.target.closest('[data-toggle]');
+    if (toggle) {
+      ensureRunState();
+      const k = toggle.dataset.toggle;
+      const at = DATA.running.completed.indexOf(k);
+      if (at >= 0) DATA.running.completed.splice(at, 1);
+      else DATA.running.completed.push(k);
+      save(true);
+      renderPlan();
+      return;
+    }
     const mark = e.target.closest('[data-mark]');
     if (mark) { openRunConfirm(mark.dataset.mark); return; }
     if (e.target.closest('#splitSave')) { confirmRunSplit(); return; }
