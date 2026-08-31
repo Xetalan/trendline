@@ -39,8 +39,12 @@ function serve() {
 }
 
 app.whenReady().then(async () => {
-  const server = await serve();
-  const base = `http://127.0.0.1:${server.address().port}/`;
+  // TEST_URL points the same suite at a deployed build; otherwise serve docs/
+  // from localhost, which is also a secure context.
+  const live = process.env.TEST_URL;
+  const server = live ? null : await serve();
+  const base = live || `http://127.0.0.1:${server.address().port}/`;
+  console.log('testing', base);
   fs.mkdirSync(SHOTS, { recursive: true });
 
   // Pixel Fold cover screen, roughly.
@@ -166,6 +170,6 @@ app.whenReady().then(async () => {
   }
   console.log(`\n${results.length - failed}/${results.length} passed`);
   if (errors.length) { console.log('CONSOLE ERRORS:'); errors.forEach((e) => console.log('  ' + e)); }
-  server.close();
+  if (server) server.close();
   app.exit(failed ? 1 : 0);
 });

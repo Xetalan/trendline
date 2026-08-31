@@ -79,6 +79,14 @@ runs in pace, matching how each is normally talked about; the CSV carries both.
 
 ## Phone (PWA)
 
+**Live at https://xetalan.github.io/trendline/**
+
+Open it in Chrome on Android, then menu (⋮) → **Add to Home screen** / **Install app**.
+It gets its own launcher icon, opens without browser chrome, and runs offline —
+the service worker caches the shell and everything you log lives in the phone's
+own storage. The URL is only needed to install it and to pick up updates.
+
+
 `npm run build:web` produces `docs/` — an installable Progressive Web App built
 from the same `src/`, so the desktop and phone builds never drift. Storage swaps
 from a JSON file to IndexedDB behind the identical `window.api` surface, and a
@@ -103,6 +111,7 @@ npm run smoke    # drive the UI through its save paths and assert on the data
 npm run pace     # the distance / duration / speed / pace conversions
 npm run workouts # the Workouts report view, editing, and the History range
 npm run test:web # serves docs/ on localhost and drives the PWA at phone size
+                 # TEST_URL=https://… points the same suite at the deployed build
 npm run build:web# build the PWA into docs/
 npm run icons    # regenerate the launcher icons
 npm run shots    # render each view to shots/*.png
