@@ -1,2 +1,13 @@
 node_modules/
 shots/
+
+# Generated build outputs (docs/ is committed because Pages serves it)
+mobile/www/
+
+# Android: the project is committed, its build products are not
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+android/app/src/main/assets/public/
+android/capacitor-cordova-android-plugins/

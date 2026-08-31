@@ -8,7 +8,12 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
-const OUT = path.join(ROOT, 'docs');
+
+// --mobile emits the Capacitor payload instead of the GitHub Pages site. The
+// difference is the CSP (native HTTP needs Oura allowed) and no service
+// worker, since the assets already ship inside the package.
+const MOBILE = process.argv.includes('--mobile');
+const OUT = path.join(ROOT, MOBILE ? 'mobile/www' : 'docs');
 
 const VERSION = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
 
@@ -17,6 +22,14 @@ fs.mkdirSync(path.join(OUT, 'vendor'), { recursive: true });
 // ---- shared assets, copied verbatim ---------------------------------------
 for (const rel of ['styles.css', 'app.js', 'platform-web.js', 'vendor/chart.umd.js']) {
   fs.copyFileSync(path.join(SRC, rel), path.join(OUT, rel));
+}
+// Shared with the Electron main process - one mapping, both platforms.
+fs.copyFileSync(path.join(ROOT, 'lib', 'oura-map.js'), path.join(OUT, 'oura-map.js'));
+// Icons: the launcher uses native resources on Android, but the manifest and
+// apple-touch-icon links reference these in both builds.
+for (const icon of ['icon-192.png', 'icon-512.png', 'icon-maskable.png']) {
+  const from = path.join(ROOT, 'docs', icon);
+  if (fs.existsSync(from)) fs.copyFileSync(from, path.join(OUT, icon));
 }
 
 // ---- index.html, rewired for the browser ----------------------------------
@@ -28,7 +41,8 @@ html = html.replace(
   /<meta http-equiv="Content-Security-Policy"[\s\S]*?\/>/,
   '<meta http-equiv="Content-Security-Policy" content="default-src \'self\'; '
   + 'script-src \'self\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data: blob:; '
-  + 'connect-src \'self\'; manifest-src \'self\'; worker-src \'self\'; base-uri \'none\'; '
+  + `connect-src 'self'${MOBILE ? ' https://api.ouraring.com' : ''}; `
+  + 'manifest-src \'self\'; worker-src \'self\'; base-uri \'none\'; '
   + 'form-action \'none\'; object-src \'none\'" />\n'
   + '  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />\n'
   + '  <meta name="theme-color" content="#2a78d6" />\n'
@@ -38,9 +52,13 @@ html = html.replace(
   + '  <link rel="apple-touch-icon" href="./icon-192.png" />');
 
 // window.api must exist before app.js runs.
+// oura-map defines window.OuraMap, which platform-web reads; both must be in
+// place before app.js runs.
 html = html.replace(
   '<script src="vendor/chart.umd.js"></script>',
-  '<script src="platform-web.js"></script>\n<script src="vendor/chart.umd.js"></script>');
+  '<script src="oura-map.js"></script>\n'
+  + '<script src="platform-web.js"></script>\n'
+  + '<script src="vendor/chart.umd.js"></script>');
 
 fs.writeFileSync(path.join(OUT, 'index.html'), html, 'utf8');
 
@@ -62,14 +80,15 @@ fs.writeFileSync(path.join(OUT, 'manifest.webmanifest'), JSON.stringify({
   ],
 }, null, 2), 'utf8');
 
-// ---- service worker -------------------------------------------------------
+// ---- service worker (web only) --------------------------------------------
+if (!MOBILE) {
 // Cache-first over a versioned cache: the app must open with no signal, and a
 // rebuild changes the version so stale shells are dropped on activate.
 fs.writeFileSync(path.join(OUT, 'sw.js'), `'use strict';
 const CACHE = 'trendline-${VERSION}';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './platform-web.js',
-  './vendor/chart.umd.js', './manifest.webmanifest',
+  './oura-map.js', './vendor/chart.umd.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable.png',
 ];
 
@@ -104,8 +123,9 @@ self.addEventListener('fetch', (e) => {
 });
 `, 'utf8');
 
-// GitHub Pages would otherwise run the output through Jekyll.
-fs.writeFileSync(path.join(OUT, '.nojekyll'), '', 'utf8');
+  // GitHub Pages would otherwise run the output through Jekyll.
+  fs.writeFileSync(path.join(OUT, '.nojekyll'), '', 'utf8');
+}
 
-console.log('built docs/ ·', VERSION);
+console.log('built', MOBILE ? 'mobile/www' : 'docs/', '·', VERSION);
 console.log('files:', fs.readdirSync(OUT).join(', '));

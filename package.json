@@ -13,15 +13,21 @@
     "icons": "electron tools/icons.js",
     "build:web": "node tools/build-web.js",
     "test:web": "electron tools/web-test.js",
-    "oura": "electron tools/oura.js"
+    "oura": "electron tools/oura.js",
+    "build:mobile": "node tools/build-web.js --mobile",
+    "icons:android": "electron tools/android-icons.js",
+    "android:sync": "npm run build:mobile && cap sync android"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@capacitor/cli": "^8.5.0",
     "electron": "^44.0.0"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "chart.js": "^4.5.1"
   },
   "private": true

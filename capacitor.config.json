@@ -1,0 +1,13 @@
+{
+  "appId": "com.trendline.tracker",
+  "appName": "Trendline",
+  "webDir": "mobile/www",
+  "android": {
+    "backgroundColor": "#f9f9f7"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

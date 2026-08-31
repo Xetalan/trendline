@@ -136,6 +136,61 @@
     },
   };
 
+  /* ---------------------------------------------------------------- Oura
+
+     Only exposed when running inside Capacitor. There, CapacitorHttp routes
+     fetch() through native Android, so Oura's missing CORS header is not a
+     problem. In a plain browser the request would be blocked outright, so the
+     bridge is left undefined and the UI hides the card rather than offering
+     a button that cannot work. */
+  const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform
+    && window.Capacitor.isNativePlatform());
+
+  if (isNative && window.OuraMap) {
+    const TOKEN_KEY = 'oura-token';   // deliberately not in `settings`, so it
+                                      // never rides along in a JSON backup
+
+    const ouraGet = async (endpoint, token, params) => {
+      const url = new URL(`https://api.ouraring.com/v2/usercollection/${endpoint}`);
+      Object.entries(params || {}).forEach(([k, v]) => url.searchParams.set(k, v));
+      const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 401) throw new Error('Oura rejected the token. Check it in Settings.');
+      if (res.status === 429) throw new Error('Oura rate limit hit. Try again in a minute.');
+      if (!res.ok) throw new Error(`Oura returned ${res.status}`);
+      const body = await res.json();
+      return Array.isArray(body.data) ? body.data : [];
+    };
+
+    window.api.oura = {
+      setToken: async (token) => {
+        if (token) await put(TOKEN_KEY, token);
+        else await del(TOKEN_KEY);
+        return true;
+      },
+      hasToken: async () => !!(await get(TOKEN_KEY)),
+      sync: async ({ startDate, endDate }) => {
+        const token = await get(TOKEN_KEY);
+        if (!token) return { ok: false, error: 'No Oura token saved yet.' };
+        try {
+          const range = { start_date: startDate, end_date: endDate };
+          const [activity, workouts] = await Promise.all([
+            ouraGet('daily_activity', token, range),
+            ouraGet('workout', token, range),
+          ]);
+          return {
+            ok: true,
+            steps: activity
+              .filter((a) => a.day && typeof a.steps === 'number')
+              .map((a) => ({ date: a.day, steps: a.steps })),
+            workouts: workouts.filter((w) => w.day && w.id).map(window.OuraMap.mapWorkout),
+          };
+        } catch (err) {
+          return { ok: false, error: err.message || String(err) };
+        }
+      },
+    };
+  }
+
   // Ask the browser not to evict the database under storage pressure. Chrome
   // grants this readily once the app is installed to the home screen.
   if (navigator.storage && navigator.storage.persist) {
@@ -144,7 +199,9 @@
     }).catch(() => {});
   }
 
-  if ('serviceWorker' in navigator) {
+  // The Android build ships its assets inside the package, so a service worker
+  // would only add a second, staler cache in front of them.
+  if ('serviceWorker' in navigator && !isNative) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('./sw.js').catch((err) =>
         console.warn('service worker registration failed', err));
