@@ -72,10 +72,10 @@ Settings → paste a personal access token from **cloud.ouraring.com → Persona
 Access Tokens**, then **Sync now**. Pulls daily steps and workout sessions for
 the last 30 days.
 
-The token is encrypted with the OS keychain (Electron ), not stored
+The token is encrypted with the OS keychain (Electron `safeStorage`), not stored
 alongside the weigh-ins.
 
-This cannot work in the PWA: the Oura API returns no 
+This cannot work in the PWA: the Oura API returns no `Access-Control-Allow-Origin`
 header, so a browser blocks the request. The desktop app fetches from the main
 process, where CORS does not apply.
 
