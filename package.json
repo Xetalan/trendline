@@ -5,7 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "electron tools/smoke.js && electron tools/pace.js && electron tools/workouts.js && electron tools/oura.js",
+    "test": "electron tools/smoke.js && electron tools/pace.js && electron tools/workouts.js && electron tools/oura.js && electron tools/layout.js",
     "smoke": "electron tools/smoke.js",
     "pace": "electron tools/pace.js",
     "workouts": "electron tools/workouts.js",
@@ -16,7 +16,8 @@
     "oura": "electron tools/oura.js",
     "build:mobile": "node tools/build-web.js --mobile",
     "icons:android": "electron tools/android-icons.js",
-    "android:sync": "npm run build:mobile && cap sync android"
+    "android:sync": "npm run build:mobile && cap sync android",
+    "layout": "electron tools/layout.js"
   },
   "keywords": [],
   "author": "",

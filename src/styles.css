@@ -152,7 +152,10 @@ button, .nav-item, .seg button, .w-row, label.field { touch-action: manipulation
 /* ------------------------------------------------------------ shell */
 .app {
   display: grid;
-  grid-template-columns: 216px 1fr;
+  /* minmax(0,1fr) rather than 1fr: a grid track defaults to min-width:auto,
+     so one wide table would stretch the column past the viewport with no way
+     to scroll back to it. */
+  grid-template-columns: 216px minmax(0, 1fr);
   height: 100vh;
 }
 
@@ -219,8 +222,14 @@ button, .nav-item, .seg button, .w-row, label.field { touch-action: manipulation
 
 .main {
   overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
   padding: 30px 34px 60px;
 }
+/* Grid and flex children also default to min-width:auto - without this a wide
+   table or canvas widens its parent instead of scrolling inside it. */
+.card, .tiles, .grid, .view, .table-scroll { min-width: 0; }
+.table-scroll { overflow-x: auto; }
 .view { display: none; }
 .view.active { display: block; animation: fade 0.16s ease-out; }
 @keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
@@ -246,6 +255,32 @@ h1 {
   margin: 3px 0 0;
   color: var(--text-secondary);
   font-size: 13px;
+}
+
+/* ------------------------------------------------------------ sub-tabs */
+.subtabs {
+  display: flex;
+  gap: 2px;
+  margin: -4px 0 18px;
+  border-bottom: 1px solid var(--border);
+}
+.subtabs button {
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 9px 14px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.subtabs button:hover { color: var(--text-primary); }
+.subtabs button[aria-pressed="true"] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 /* ------------------------------------------------------------ cards */
@@ -494,8 +529,12 @@ h1 {
 }
 
 /* ------------------------------------------------------------ charts */
-.chart-box { position: relative; height: 260px; }
+.chart-box { position: relative; height: 260px; min-width: 0; }
 .chart-box.tall { height: 310px; }
+/* Chart.js writes inline pixel width onto the canvas. If the container
+   shrinks - folding a phone, or a view rendered wide then shown narrow - the
+   stale width would push the whole layout sideways. */
+.chart-box canvas { max-width: 100% !important; }
 
 .legend {
   display: flex;
@@ -804,14 +843,18 @@ td.muted { color: var(--text-muted); }
 
   .nav-item {
     flex-direction: column;
-    gap: 3px;
-    padding: 7px 4px;
-    font-size: 10.5px;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 4px;
+    font-size: 11.5px;
     font-weight: 600;
     text-align: center;
-    min-width: 62px;
+    flex: 1 1 0;
+    min-width: 0;
     white-space: nowrap;
   }
+  /* Five items fit across a cover screen, so the glyphs can be legible. */
+  .nav-item svg { width: 22px; height: 22px; }
   .nav-item.active { background: transparent; }
 
   .main { padding: 18px 14px 26px; }
@@ -833,7 +876,7 @@ td.muted { color: var(--text-muted); }
   .chart-box.tall { height: 250px; }
 
   /* Every field stacks: a phone has no room for a five-column form row. */
-  .form-row.w, .form-row.a,
+  .form-row,
   #cardioFields, .w-edit-grid,
   .grid[style*="grid-template-columns"] {
     display: grid !important;
@@ -865,6 +908,7 @@ td.muted { color: var(--text-muted); }
 
   .seg { flex-wrap: wrap; }
   .seg button { padding: 5px 9px; font-size: 12px; }
+  .subtabs button { padding: 9px 11px; font-size: 13px; flex: 1; }
   .w-edit { padding: 13px 10px 15px; border-left-width: 2px; }
   .set-chip .s-del { opacity: 1; }
 }
@@ -874,7 +918,7 @@ td.muted { color: var(--text-muted); }
   .tile.hero { grid-column: span 1; }
   .dist-grid, .recap-row, .pr-grid { grid-template-columns: 1fr; }
   .dist-item { padding-left: 2px; border-left: 0; }
-  .form-row.w, .form-row.a, #cardioFields, .w-edit-grid {
+  .form-row, #cardioFields, .w-edit-grid {
     grid-template-columns: 1fr !important;
   }
   .form-row.w > .btn, .w-edit-grid,

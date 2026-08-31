@@ -100,7 +100,7 @@ app.whenReady().then(async () => {
     `DATA.settings.theme = ${JSON.stringify(theme)}; applyTheme(); renderAll(); true;`);
   await new Promise((r) => setTimeout(r, 1200));
 
-  for (const view of ['dashboard', 'training', 'workouts', 'log', 'history']) {
+  for (const view of ['dashboard', 'training', 'log', 'history']) {
     await win.webContents.executeJavaScript(`show(${JSON.stringify(view)}); true;`);
     await new Promise((r) => setTimeout(r, 1000));
     const img = await win.webContents.capturePage();
@@ -108,8 +108,20 @@ app.whenReady().then(async () => {
     console.log('wrote', `${view}-${theme}.png`);
   }
 
-  // The per-workout editor only exists once a row is opened.
-  await win.webContents.executeJavaScript(`show('workouts');
+  // Each dashboard focus panel.
+  for (const focus of ['run', 'lift']) {
+    await win.webContents.executeJavaScript(
+      `show('dashboard'); dashFocus = ${JSON.stringify(focus)}; renderDashboard(); true;`);
+    await new Promise((r) => setTimeout(r, 900));
+    const shot = await win.webContents.capturePage();
+    fs.writeFileSync(path.join(OUT, `dash-${focus}-${theme}.png`), shot.toPNG());
+    console.log('wrote', `dash-${focus}-${theme}.png`);
+  }
+  await win.webContents.executeJavaScript(`dashFocus = 'weight'; renderDashboard(); true;`);
+
+  // The per-workout editor lives under Training > Sessions, once a row is open.
+  await win.webContents.executeJavaScript(`show('training');
+    showSubtab('training', 'sessions');
     workoutFilter = 'hike';
     openEditor = DATA.activities.filter(a => a.type === 'hike').sort((a,b) => a.date < b.date ? 1 : -1)[0].id;
     renderWorkouts(); true;`);

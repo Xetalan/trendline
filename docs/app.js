@@ -680,7 +680,161 @@ function drawTrainingCharts() {
 }
 
 /* ------------------------------------------------------------ dashboard */
+// The dashboard can focus on weight or on any one activity, so each discipline
+// gets its own headline numbers instead of being averaged into one view.
+let dashFocus = 'weight';
+
+const FOCUS_FIELDS = {
+  run:  { miles: 'runMi',  minutes: 'runMin' },
+  walk: { miles: 'walkMi', minutes: 'walkMin' },
+  hike: { miles: 'hikeMi', minutes: 'hikeMin' },
+  lift: { miles: null,     minutes: 'liftMin' },
+};
+
+function renderActivityDashboard(type) {
+  const el = document.getElementById('dashActivity');
+  const t = TYPES[type];
+  const all = DATA.activities.filter((a) => a.type === type)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  if (!all.length) {
+    el.innerHTML = `<div class="card"><div class="empty">`
+      + `No ${t.label.toLowerCase()} sessions logged yet. Add one from Log Today.</div></div>`;
+    return;
+  }
+
+  const st = workoutStats(all);
+  const weeks = weeklyActivity();
+  const thisWeek = weeks[weeks.length - 1];
+  const f = FOCUS_FIELDS[type];
+  const isLift = type === 'lift';
+  const avgSpeed = st.mins > 0 && st.dist > 0 ? (60 * st.dist) / st.mins : null;
+
+  const tiles = isLift ? [
+    { label: 'Sessions', value: int(st.sessions), sub: 'all time' },
+    { label: 'Total volume', value: int(st.vol), unit: 'lbs' },
+    { label: 'Total time', value: fmtDuration(st.mins) },
+    { label: 'This week', value: int(thisWeek ? thisWeek.tonnage : 0), unit: 'lbs' },
+  ] : [
+    { label: 'Sessions', value: int(st.sessions), sub: 'all time' },
+    { label: 'Total distance', value: n2(st.dist), unit: 'mi' },
+    { label: 'Total time', value: fmtDuration(st.mins) },
+    { label: 'Average speed', value: avgSpeed ? avgSpeed.toFixed(1) : '—', unit: 'mph',
+      sub: avgSpeed ? `${paceOf(st.mins, st.dist)} /mi` : '' },
+    { label: 'Longest', value: n2(st.longest), unit: 'mi' },
+    { label: 'This week', value: n2(thisWeek ? thisWeek[f.miles] : 0), unit: 'mi' },
+  ];
+
+  el.innerHTML = `
+    <div class="tiles">${tiles.map((x) => `
+      <div class="tile">
+        <div class="tile-label">${x.label}</div>
+        <div class="tile-value">${esc(x.value)}${x.unit ? `<span class="unit">${x.unit}</span>` : ''}</div>
+        ${x.sub ? `<div class="tile-sub">${esc(x.sub)}</div>` : ''}
+      </div>`).join('')}</div>
+
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">${isLift ? 'Volume per week' : 'Distance per week'}</span>
+        <span class="card-note">${t.label} only</span>
+      </div>
+      <div class="chart-box"><canvas id="chartFocusWeekly"></canvas></div>
+    </div>
+
+    ${isLift ? '' : `
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">Speed per session</span>
+        <span class="card-note">Higher is faster</span>
+      </div>
+      <div class="chart-box"><canvas id="chartFocusPace"></canvas></div>
+    </div>`}
+
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">Recent ${t.label.toLowerCase()} sessions</span>
+        <span class="card-note">Last 10 · edit them under Training</span>
+      </div>
+      <div class="table-scroll"><table><tbody>${activityRows(all.slice(0, 10))}</tbody></table></div>
+    </div>`;
+
+  // --- weekly bar
+  const labels = weeks.map((w) => fmtShort(w.start));
+  const values = weeks.map((w) => (isLift ? w.tonnage : w[f.miles]));
+  const wOpts = { ...baseOptions(),
+    scales: { x: baseOptions().scales.x, y: { ...baseOptions().scales.y, beginAtZero: true } } };
+  wOpts.plugins.tooltip.callbacks = {
+    title: (i) => `Week ${weeks[i[0].dataIndex].index} · ${fmtShort(weeks[i[0].dataIndex].start)}`,
+    label: (ctx) => (isLift
+      ? `${Math.round(ctx.parsed.y).toLocaleString()} lbs`
+      : `${ctx.parsed.y.toFixed(2)} mi`),
+  };
+  draw('focusWeekly', 'chartFocusWeekly', {
+    type: 'bar',
+    data: { labels, datasets: [{
+      label: t.label,
+      data: values,
+      backgroundColor: css(t.color),
+      borderColor: css('--surface'),
+      borderWidth: 2, borderRadius: 4, borderSkipped: false,
+      categoryPercentage: 0.7, barPercentage: 0.85,
+    }] },
+    options: wOpts,
+  });
+
+  // --- speed per session
+  if (!isLift) {
+    const pts = all.filter((a) => a.distance > 0 && a.minutes > 0)
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+    const pOpts = baseOptions();
+    pOpts.plugins.tooltip.callbacks = {
+      title: (i) => fmtFull(pts[i[0].dataIndex].date),
+      label: (ctx) => {
+        const a = pts[ctx.dataIndex];
+        return `${ctx.parsed.y.toFixed(1)} mph · ${paceOf(a.minutes, a.distance)} /mi · ${n2(a.distance)} mi`;
+      },
+    };
+    draw('focusPace', 'chartFocusPace', {
+      type: 'line',
+      data: {
+        labels: pts.map((a) => fmtShort(a.date)),
+        datasets: [{
+          label: 'mph',
+          data: pts.map((a) => (60 * a.distance) / a.minutes),
+          borderColor: css(t.color),
+          backgroundColor: css(t.color),
+          borderWidth: 2.5,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          pointBorderColor: css('--surface'),
+          pointBorderWidth: 1.5,
+          tension: 0.25,
+        }],
+      },
+      options: pOpts,
+    });
+  }
+}
+
 function renderDashboard() {
+  // Activity focus replaces the weight panel entirely.
+  const weightPanel = document.getElementById('dashWeight');
+  const activityPanel = document.getElementById('dashActivity');
+  if (dashFocus !== 'weight') {
+    weightPanel.hidden = true;
+    activityPanel.hidden = false;
+    document.getElementById('dashSub').textContent =
+      `${TYPES[dashFocus].label} — every session you have logged`;
+    renderActivityDashboard(dashFocus);
+    return;
+  }
+  weightPanel.hidden = false;
+  activityPanel.hidden = true;
+
+  renderWeightDashboard();
+}
+
+function renderWeightDashboard() {
   const cur = latest();
   const avgRow = latestAvg();
   const start = DATA.settings.startWeight;
@@ -1389,7 +1543,15 @@ async function refreshOuraState() {
     card.hidden = true;
     return;
   }
-  const has = await window.api.oura.hasToken();
+  let has = false;
+  try {
+    has = await window.api.oura.hasToken();
+  } catch (_) {
+    // The bridge is present but the handler is not (a test harness, or an
+    // older desktop build). Hide the card rather than reject unhandled.
+    card.hidden = true;
+    return;
+  }
   document.getElementById('ouraSync').disabled = !has;
   document.getElementById('ouraToken').placeholder = has
     ? 'Token saved — paste a new one to replace it'
@@ -1663,11 +1825,30 @@ function renderAll() {
   refreshExerciseNames();
 }
 
+// Chart.js measures the container at resize() time, so a hidden view reports
+// zero and a just-shown one has not been laid out yet. Deferring a frame gives
+// it real numbers to work from.
+function resizeCharts() {
+  requestAnimationFrame(() => {
+    Object.values(charts).forEach((c) => { try { c.resize(); } catch (_) { /* mid-teardown */ } });
+  });
+}
+
+// Sub-tabs let two related views share one nav slot, which matters most on a
+// phone where seven bottom-bar items were unreadably small.
+function showSubtab(group, tab) {
+  document.querySelectorAll(`.subtabs[data-tabgroup="${group}"] button`).forEach((b) =>
+    b.setAttribute('aria-pressed', String(b.dataset.tab === tab)));
+  document.querySelectorAll(`.subview[data-tabgroup="${group}"]`).forEach((v) => {
+    v.hidden = v.dataset.tab !== tab;
+  });
+  resizeCharts();
+}
+
 function show(view) {
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
   document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.nav === view));
-  // Charts size themselves against a visible container.
-  Object.values(charts).forEach((c) => c.resize());
+  resizeCharts();
 }
 
 /* ------------------------------------------------------------ weigh-in */
@@ -1693,6 +1874,22 @@ function saveWeighin(date, weight, steps, notes) {
 function wire() {
   document.querySelectorAll('.nav-item').forEach((b) =>
     b.addEventListener('click', () => show(b.dataset.nav)));
+
+  document.getElementById('dashFocus').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-focus]');
+    if (!btn) return;
+    dashFocus = btn.dataset.focus;
+    document.querySelectorAll('#dashFocus button').forEach((b) =>
+      b.setAttribute('aria-pressed', String(b.dataset.focus === dashFocus)));
+    renderDashboard();
+    resizeCharts();
+  });
+
+  document.querySelectorAll('.subtabs').forEach((bar) =>
+    bar.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-tab]');
+      if (btn) showSubtab(bar.dataset.tabgroup, btn.dataset.tab);
+    }));
 
   document.getElementById('themeToggle').addEventListener('click', () => {
     const order = ['auto', 'light', 'dark'];
@@ -1953,11 +2150,21 @@ function wire() {
     }
   });
   document.getElementById('exportDays').addEventListener('click', () => exportCsv('trendline-weight.csv', daysCsv()));
-  document.getElementById('exportActivities').addEventListener('click', () => exportCsv('trendline-workouts.csv', activitiesCsv()));
   document.getElementById('exportAll').addEventListener('click', () =>
     exportCsv('trendline-export.csv', `${daysCsv()}\r\n\r\n${activitiesCsv()}`));
 
-  window.addEventListener('resize', () => Object.values(charts).forEach((c) => c.resize()));
+  window.addEventListener('resize', resizeCharts);
+
+  // Unfolding a foldable resizes the content area without necessarily firing a
+  // window resize the page can rely on, so watch the container itself.
+  if (window.ResizeObserver) {
+    let lastWidth = 0;
+    const ro = new ResizeObserver((entries) => {
+      const w = Math.round(entries[0].contentRect.width);
+      if (w && w !== lastWidth) { lastWidth = w; resizeCharts(); }
+    });
+    ro.observe(document.querySelector('.main'));
+  }
 }
 
 /* ------------------------------------------------------------ init */
