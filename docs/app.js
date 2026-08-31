@@ -1756,15 +1756,89 @@ function beep(freq, ms, delay) {
   } catch (_) { /* audio is a nicety, never a blocker */ }
 }
 
+/* Voice selection.
+
+   The Web Speech API exposes no gender field, so the only signal is the voice
+   name. Android's Google TTS marks them plainly - "en-us-x-sfg#female_1-local"
+   - while desktop platforms use first names. Both are matched below.
+
+   Quality varies enormously: a "Natural"/"Neural" voice is worlds better than
+   the old compact ones. Local voices are still preferred over network ones,
+   because a cue that needs a round trip is no use mid-run with no signal. */
+const FEMALE_VOICE = /(#female|\bfemale\b|zira|aria|jenny|michelle|hazel|susan|linda|catherine|samantha|karen|moira|tessa|fiona|victoria|allison|\bava\b|zoe|emma|amber|sonia|libby|natasha|clara|joanna|salli|kendra|kimberly|\bivy\b|nicole|olivia|serena|heera|raveena|\beva\b)/i;
+const MALE_VOICE = /(#male|\bmale\b|david|mark|george|james|ryan|\bguy\b|daniel|\balex\b|fred|\btom\b|oliver|william|brian|matthew|justin|joey|rishi|arthur)/i;
+
+function scoreVoice(v) {
+  const n = `${v.name || ''} ${v.voiceURI || ''}`;
+  if (!/^en/i.test(v.lang || '')) return -1;          // English cues only
+  let s = 0;
+  if (FEMALE_VOICE.test(n)) s += 120;
+  else if (MALE_VOICE.test(n)) s -= 120;
+  if (/natural|neural/i.test(n)) s += 60;
+  if (/google/i.test(n)) s += 35;
+  if (/desktop|espeak|compact|-eloquence/i.test(n)) s -= 45;
+  if (v.localService) s += 25;                        // works with no signal
+  if (/^en[-_]us/i.test(v.lang)) s += 10;
+  return s;
+}
+
+const voiceList = () => {
+  try { return window.speechSynthesis ? window.speechSynthesis.getVoices() : []; }
+  catch (_) { return []; }
+};
+
+function pickVoice() {
+  const voices = voiceList();
+  if (!voices.length) return null;
+  const chosen = DATA && DATA.settings.voiceURI;
+  if (chosen) {
+    const exact = voices.find((v) => v.voiceURI === chosen);
+    if (exact) return exact;
+  }
+  return voices
+    .map((v) => ({ v, s: scoreVoice(v) }))
+    .filter((x) => x.s >= 0)
+    .sort((a, b) => b.s - a.s)[0]?.v || voices[0];
+}
+
 function say(text) {
   try {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.05;
+    // Assigning a voice can throw if the engine hands back something odd.
+    // Losing the preferred voice is a nuisance; losing the cue entirely, mid
+    // interval, is not acceptable - so this fails on its own.
+    try {
+      const v = pickVoice();
+      if (v) { u.voice = v; u.lang = v.lang; }
+    } catch (_) { /* fall back to the system default voice */ }
+    u.rate = Number(DATA && DATA.settings.voiceRate) || 1;
+    u.pitch = 1;
     u.volume = 1;
     window.speechSynthesis.speak(u);
   } catch (_) { /* voice is optional */ }
+}
+
+// getVoices() is empty until the engine has loaded them, which on Android is
+// after first paint, so the picker has to be rebuilt when they arrive.
+function renderVoicePicker() {
+  const sel = document.getElementById('voiceSel');
+  if (!sel) return;
+  const voices = voiceList().filter((v) => /^en/i.test(v.lang || ''));
+  const best = pickVoice();
+  if (!voices.length) {
+    sel.innerHTML = '<option value="">No voices installed</option>';
+    return;
+  }
+  sel.innerHTML = voices
+    .map((v) => ({ v, s: scoreVoice(v) }))
+    .sort((a, b) => b.s - a.s)
+    .map(({ v }) => `<option value="${esc(v.voiceURI)}"${best && v.voiceURI === best.voiceURI ? ' selected' : ''}>`
+      + `${esc(v.name)}${v.localService ? '' : ' · needs data'}</option>`)
+    .join('');
+  const rate = document.getElementById('voiceRate');
+  if (rate) rate.value = Number(DATA.settings.voiceRate) || 1;
 }
 
 async function keepAwake(on) {
@@ -2899,6 +2973,28 @@ function wire() {
     document.getElementById('ouraSync').addEventListener('click', () => syncOura(30));
   } else {
     document.getElementById('ouraCard').hidden = true;
+  }
+
+  // --- coaching voice
+  const voiceSel = document.getElementById('voiceSel');
+  voiceSel.addEventListener('change', () => {
+    DATA.settings.voiceURI = voiceSel.value || null;
+    save(true);
+    say('This is how your run cues will sound.');
+  });
+  document.getElementById('voiceRate').addEventListener('change', (e) => {
+    const v = Number(e.target.value);
+    DATA.settings.voiceRate = Number.isFinite(v) && v > 0 ? v : 1;
+    save(true);
+    say('Run for 90 seconds. Three more after this.');
+  });
+  document.getElementById('voiceTest').addEventListener('click', () =>
+    say('Run for 90 seconds. Three more after this. Last one coming up.'));
+
+  renderVoicePicker();
+  if (window.speechSynthesis) {
+    // Android populates the voice list after first paint.
+    window.speechSynthesis.onvoiceschanged = renderVoicePicker;
   }
 
   document.getElementById('revealData').addEventListener('click', () => window.api.reveal());

@@ -5,7 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node tools/loads-test.js && electron tools/smoke.js && electron tools/pace.js && electron tools/workouts.js && electron tools/oura.js && electron tools/layout.js && electron tools/plan.js && electron tools/running.js",
+    "test": "node tools/loads-test.js && electron tools/smoke.js && electron tools/pace.js && electron tools/workouts.js && electron tools/oura.js && electron tools/layout.js && electron tools/plan.js && electron tools/running.js && electron tools/voice.js",
     "smoke": "electron tools/smoke.js",
     "pace": "electron tools/pace.js",
     "workouts": "electron tools/workouts.js",
@@ -20,7 +20,8 @@
     "layout": "electron tools/layout.js",
     "loads": "node tools/loads-test.js",
     "plan": "electron tools/plan.js",
-    "running": "electron tools/running.js"
+    "running": "electron tools/running.js",
+    "voice": "electron tools/voice.js"
   },
   "keywords": [],
   "author": "",

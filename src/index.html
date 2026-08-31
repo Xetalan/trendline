@@ -356,6 +356,27 @@
         </div>
       </div>
 
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Coaching voice</span>
+          <span class="card-note">Used during runs</span>
+        </div>
+        <div class="form-row" style="grid-template-columns:1fr 120px auto">
+          <label class="field">Voice<select id="voiceSel"></select></label>
+          <label class="field">Speed<input type="number" id="voiceRate" step="0.05" min="0.6" max="1.6" /></label>
+          <button class="btn ghost" id="voiceTest">Test</button>
+        </div>
+        <p class="hint" style="margin-top:10px">
+          Picks the best female English voice your device has. Voices marked
+          <strong>needs data</strong> sound better but will not speak without a signal —
+          on a run, prefer one without that label.
+        </p>
+        <p class="hint" style="margin-top:6px">
+          Only a couple of voices listed? On Android, install more under
+          <strong>Settings → System → Languages → Text-to-speech</strong>, then reopen this app.
+        </p>
+      </div>
+
       <div class="card" id="ouraCard">
         <div class="card-head">
           <span class="card-title">Oura ring</span>
