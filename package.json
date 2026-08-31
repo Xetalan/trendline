@@ -1,0 +1,27 @@
+{
+  "name": "trendline",
+  "version": "1.0.0",
+  "description": "Weight and training tracker",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "electron tools/smoke.js && electron tools/pace.js && electron tools/workouts.js",
+    "smoke": "electron tools/smoke.js",
+    "pace": "electron tools/pace.js",
+    "workouts": "electron tools/workouts.js",
+    "shots": "electron tools/shot.js",
+    "icons": "electron tools/icons.js",
+    "build:web": "node tools/build-web.js",
+    "test:web": "electron tools/web-test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^44.0.0"
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1"
+  },
+  "private": true
+}

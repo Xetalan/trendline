@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#2a78d6" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <title>Trendline</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app">
+
+  <!-- ========================================================= sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="1" y="1" width="22" height="22" rx="6" fill="var(--accent)"/>
+        <path d="M5 16.5 L9.5 11.5 L13 14 L19 6.5" stroke="var(--accent-ink)"
+              stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="brand-name">Trendline</span>
+    </div>
+
+    <button class="nav-item active" data-nav="dashboard">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 3 6-8"/><path d="M3 21h18"/></svg>
+      Dashboard
+    </button>
+    <button class="nav-item" data-nav="log">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      Log Today
+    </button>
+    <button class="nav-item" data-nav="training">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11"/></svg>
+      Training
+    </button>
+    <button class="nav-item" data-nav="workouts">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5h10M9 12h10M9 19h10"/><circle cx="4.5" cy="5" r="1.4"/><circle cx="4.5" cy="12" r="1.4"/><circle cx="4.5" cy="19" r="1.4"/></svg>
+      Workouts
+    </button>
+    <button class="nav-item" data-nav="history">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+      History
+    </button>
+    <button class="nav-item" data-nav="settings">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H7a1.6 1.6 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V7a1.6 1.6 0 0 0 1.5 1H23a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+      Settings
+    </button>
+
+    <div class="sidebar-foot">
+      <button class="btn ghost sm" id="themeToggle">Theme: Auto</button>
+    </div>
+  </aside>
+
+  <!-- ========================================================= main -->
+  <main class="main">
+
+    <!-- ---------------------------------------------- DASHBOARD -->
+    <section class="view active" id="view-dashboard">
+      <div class="view-head">
+        <div>
+          <h1>Dashboard</h1>
+          <p class="view-sub" id="dashSub"></p>
+        </div>
+        <div class="row">
+          <input type="number" id="quickWeight" step="0.1" min="50" max="800"
+                 placeholder="Today's weight" style="width:150px" />
+          <button class="btn" id="quickSave">Log weigh-in</button>
+        </div>
+      </div>
+
+      <div class="tiles" id="dashTiles"></div>
+      <div id="goalCard"></div>
+      <div id="distanceCard"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Weight trend</span>
+          <span class="card-note">Daily readings bounce on water and food. The average is the signal.</span>
+        </div>
+        <div class="legend">
+          <span class="legend-item"><span class="swatch" style="background:var(--series-faint)"></span>Daily reading</span>
+          <span class="legend-item"><span class="swatch line" style="background:var(--series-1)"></span>7-day average</span>
+        </div>
+        <div class="chart-box tall"><canvas id="chartWeight"></canvas></div>
+      </div>
+
+      <div class="grid two">
+        <div class="card">
+          <div class="card-head"><span class="card-title">Weekly average</span></div>
+          <div class="chart-box"><canvas id="chartWeekly"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">Change per week</span>
+            <span class="card-note">Down is progress</span>
+          </div>
+          <div class="chart-box"><canvas id="chartChange"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Week by week</span>
+          <span class="card-note">The table behind the charts</span>
+        </div>
+        <div class="table-scroll"><table id="weeklyTable"></table></div>
+      </div>
+    </section>
+
+    <!-- ---------------------------------------------- LOG -->
+    <section class="view" id="view-log">
+      <div class="view-head">
+        <div>
+          <h1>Log Today</h1>
+          <p class="view-sub">Weigh in first thing, same conditions every day. Add workouts as they happen.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">Weigh-in</span></div>
+        <div class="form-row w">
+          <label class="field">Date<input type="date" id="wDate" /></label>
+          <label class="field">Weight (lbs)<input type="number" id="wWeight" step="0.1" min="50" max="800" /></label>
+          <label class="field">Steps<input type="number" id="wSteps" step="1" min="0" /></label>
+          <label class="field">Notes<input type="text" id="wNotes" placeholder="Sleep, dose day, how you felt…" /></label>
+          <button class="btn" id="wSave">Save</button>
+        </div>
+        <p class="hint" id="wHint" style="margin-top:10px"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">Add a workout</span></div>
+
+        <div class="row" style="margin-bottom:14px">
+          <div class="seg" id="typeSeg">
+            <button data-type="run"   aria-pressed="true"><span class="dot" style="background:var(--series-1)"></span>Run</button>
+            <button data-type="walk"  aria-pressed="false"><span class="dot" style="background:var(--series-2)"></span>Walk</button>
+            <button data-type="hike"  aria-pressed="false"><span class="dot" style="background:var(--series-3)"></span>Hike</button>
+            <button data-type="lift"  aria-pressed="false"><span class="dot" style="background:var(--series-4)"></span>Lift</button>
+            <button data-type="other" aria-pressed="false"><span class="dot" style="background:var(--series-5)"></span>Other</button>
+          </div>
+        </div>
+
+        <div class="form-row a" style="margin-bottom:14px">
+          <label class="field">Date<input type="date" id="aDate" /></label>
+          <label class="field" id="aLabelField" hidden>What was it?<input type="text" id="aLabel" placeholder="Bike, swim, yoga…" /></label>
+        </div>
+
+        <div class="grid" id="cardioFields" style="grid-template-columns:120px 120px 120px 120px 1fr; margin-bottom:14px">
+          <label class="field">Distance (mi)<input type="number" id="aDist" step="0.01" min="0" /></label>
+          <label class="field">Duration (min)<input type="number" id="aMin" step="1" min="0" /></label>
+          <label class="field">Speed (mph)<input type="number" id="aSpeed" step="0.1" min="0" placeholder="3.5" /></label>
+          <label class="field">Pace (min/mi)<input type="text" id="aPace" inputmode="decimal" placeholder="9:30" /></label>
+          <label class="field">Notes<input type="text" id="aNotesCardio" placeholder="Incline, effort, how it felt…" /></label>
+        </div>
+        <p class="hint" style="margin:-6px 0 14px">Enter any two of distance, duration and speed — the rest fill themselves in.</p>
+
+        <div id="liftFields" hidden>
+          <div id="exerciseList"></div>
+          <div class="row" style="margin-bottom:12px">
+            <button class="btn ghost sm" id="addExercise">+ Add exercise</button>
+            <span class="spacer"></span>
+            <span class="card-note">Session volume: <strong id="tonnage">0 lbs</strong></span>
+          </div>
+          <div class="grid" style="grid-template-columns:130px 1fr">
+            <label class="field">Duration (min)<input type="number" id="aLiftMin" step="1" min="0" /></label>
+            <label class="field">Notes<input type="text" id="aNotesLift" placeholder="How it went…" /></label>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:16px">
+          <button class="btn" id="aSave">Add workout</button>
+          <button class="btn ghost" id="aClear">Clear</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Recent workouts</span>
+          <span class="card-note">Last 10</span>
+        </div>
+        <div id="recentActivities"></div>
+      </div>
+    </section>
+
+    <!-- ---------------------------------------------- TRAINING -->
+    <section class="view" id="view-training">
+      <div class="view-head">
+        <div>
+          <h1>Training</h1>
+          <p class="view-sub">Running, walking, hiking and lifting volume by week.</p>
+        </div>
+        <button class="btn ghost sm" id="exportActivities">Export CSV</button>
+      </div>
+
+      <div class="tiles" id="trainTiles"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Active minutes per week</span>
+        </div>
+        <div class="legend" id="minutesLegend"></div>
+        <div class="chart-box"><canvas id="chartMinutes"></canvas></div>
+      </div>
+
+      <div class="grid two">
+        <div class="card">
+          <div class="card-head"><span class="card-title">Distance per week</span></div>
+          <div class="legend">
+            <span class="legend-item"><span class="swatch" style="background:var(--series-1)"></span>Run</span>
+            <span class="legend-item"><span class="swatch" style="background:var(--series-2)"></span>Walk</span>
+            <span class="legend-item"><span class="swatch" style="background:var(--series-3)"></span>Hike</span>
+          </div>
+          <div class="chart-box"><canvas id="chartDistance"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">Lifting volume per week</span>
+            <span class="card-note">Reps × weight</span>
+          </div>
+          <div class="chart-box"><canvas id="chartTonnage"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Strength progress</span>
+          <span class="card-note">Best set per exercise over time</span>
+        </div>
+        <div id="strengthTable"></div>
+      </div>
+
+    </section>
+
+    <!-- ---------------------------------------------- WORKOUTS -->
+    <section class="view" id="view-workouts">
+      <div class="view-head">
+        <div>
+          <h1>Workouts</h1>
+          <p class="view-sub">Every session you have logged. Pick a type, then click any row to edit or delete it.</p>
+        </div>
+        <button class="btn ghost sm" id="exportWorkouts">Export CSV</button>
+      </div>
+
+      <div class="row" style="margin-bottom:16px">
+        <div class="seg" id="typeFilter"></div>
+      </div>
+
+      <div id="workoutFlags"></div>
+      <div class="tiles" id="workoutTiles"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title" id="workoutTableTitle">All workouts</span>
+          <span class="card-note" id="workoutTableNote"></span>
+        </div>
+        <div id="workoutTable"></div>
+      </div>
+    </section>
+
+    <!-- ---------------------------------------------- HISTORY -->
+    <section class="view" id="view-history">
+      <div class="view-head">
+        <div>
+          <h1>History</h1>
+          <p class="view-sub">Every day you have logged. Click a weight to edit it.</p>
+        </div>
+        <button class="btn ghost sm" id="exportDays">Export CSV</button>
+      </div>
+      <div class="card">
+        <div class="table-scroll full" id="historyTable"></div>
+      </div>
+    </section>
+
+    <!-- ---------------------------------------------- SETTINGS -->
+    <section class="view" id="view-settings">
+      <div class="view-head">
+        <div>
+          <h1>Settings</h1>
+          <p class="view-sub">Your baseline and where the data lives.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">Baseline</span></div>
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+          <label class="field">Starting weight (lbs)<input type="number" id="sStart" step="0.1" /></label>
+          <label class="field">Start date<input type="date" id="sDate" /></label>
+          <label class="field">Goal weight (optional)<input type="number" id="sGoal" step="0.1" placeholder="—" /></label>
+          <label class="field">Medication<input type="text" id="sMed" placeholder="e.g. Zepbound 2.5mg" /></label>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn" id="sSave">Save settings</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">Your data</span></div>
+        <p class="hint" style="margin-bottom:12px">
+          Everything lives in a plain JSON file on this PC. Nothing is uploaded anywhere.
+          A dated backup is written each time the app starts, and the last 14 are kept.
+        </p>
+        <div class="row">
+          <button class="btn ghost sm" id="revealData">Show data file</button>
+          <button class="btn ghost sm" id="exportAll">Export everything (CSV)</button>
+          <button class="btn ghost sm" id="backupJson">Save backup (JSON)</button>
+          <button class="btn ghost sm" id="importJson">Restore from backup…</button>
+          <input type="file" id="importFile" accept="application/json,.json" hidden />
+        </div>
+        <p class="hint" style="margin-top:10px">
+          <strong>Save backup</strong> writes a JSON file holding everything — weigh-ins, workouts and settings.
+          <strong>Restore</strong> reads one back in. That pair is how you move your history between this PC and your phone.
+        </p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="platform-web.js"></script>
+<script src="vendor/chart.umd.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
