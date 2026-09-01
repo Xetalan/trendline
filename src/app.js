@@ -151,16 +151,37 @@ function weekBuckets() {
   // weeks get measured against, not a one-reading week of its own.
   const s = parseISO(startISO);
   const anchor = mondayOf(s);
-  const first = anchor < s ? addDays(anchor, 7) : anchor;
-  const lastAct = DATA.activities.reduce((m, a) => (a.date > m ? a.date : m), '');
-  const lastSeen = [todayISO(), ws.length ? ws[ws.length - 1].date : '', lastAct].sort().pop();
-  const last = mondayOf(parseISO(lastSeen));
+  const weekOne = anchor < s ? addDays(anchor, 7) : anchor;
+
+  // Cover everything logged, not just what came after the programme started.
+  // Anchoring the first bucket at week one left anything earlier - workouts
+  // from before the start date - counted in no week at all, so it vanished
+  // from every weekly chart.
+  const dates = ws.map((w) => w.date)
+    .concat(DATA.activities.map((a) => a.date))
+    .filter(Boolean)
+    .sort();
+  let first = dates.length ? mondayOf(parseISO(dates[0])) : weekOne;
+  if (first > weekOne) first = weekOne;
+
+  // The grid stops at the current week. Stretching it to cover a date in the
+  // future would hand a mistyped year its own bucket instead of flagging it.
+  const last = mondayOf(new Date());
+
   const out = [];
-  for (let d = first, i = 1; d <= last; d = addDays(d, 7), i++) {
-    out.push({ index: i, start: iso(d), end: iso(addDays(d, 6)) });
+  for (let d = first; d <= last; d = addDays(d, 7)) {
+    // Numbered relative to the start date, so week 1 still means the first
+    // week of the programme. Anything earlier is zero or negative.
+    const index = Math.round(daysBetween(iso(weekOne), iso(d)) / 7) + 1;
+    out.push({ index, start: iso(d), end: iso(addDays(d, 6)) });
   }
   return out;
 }
+
+// Week numbers count from the start date, which is when the medication began -
+// but training predates that, and those weeks count just as much. They are
+// named by date rather than given a zero or negative number.
+const weekLabel = (row) => (row.index > 0 ? `Week ${row.index}` : `Week of ${fmtShort(row.start)}`);
 
 function weeklyWeight() {
   const byDate = new Map(weighins().map((w) => [w.date, w.weight]));
@@ -305,6 +326,10 @@ function personalRecords() {
 }
 
 function tonnageOf(a) {
+  // Band work carries no plate weight and is done per arm, so reps x weight
+  // would be a meaningless number. Excluded outright rather than relying on
+  // the weight happening to be zero.
+  if (a.bandWork) return 0;
   if (a.type !== 'lift' || !Array.isArray(a.exercises)) return 0;
   return a.exercises.reduce((sum, ex) => sum +
     (ex.sets || []).reduce((s, st) => s + (Number(st.reps) || 0) * (Number(st.weight) || 0), 0), 0);
@@ -526,7 +551,7 @@ function drawWeeklyCharts() {
     opts.scales.y.max = b.max;
   }
   opts.plugins.tooltip.callbacks = {
-    title: (i) => `Week ${labelled[i[0].dataIndex].index} · ${fmtShort(labelled[i[0].dataIndex].start)}`,
+    title: (i) => `${weekLabel(labelled[i[0].dataIndex])}`,
     label: (ctx) => `Average: ${ctx.parsed.y.toFixed(2)} lbs`,
   };
 
@@ -554,7 +579,7 @@ function drawWeeklyCharts() {
   const ch = rows.filter((r) => r.change != null);
   const o2 = baseOptions();
   o2.plugins.tooltip.callbacks = {
-    title: (i) => `Week ${ch[i[0].dataIndex].index} · ${fmtShort(ch[i[0].dataIndex].start)}`,
+    title: (i) => `${weekLabel(ch[i[0].dataIndex])}`,
     label: (ctx) => {
       const v = ctx.parsed.y;
       return `${v < 0 ? 'Down' : 'Up'} ${Math.abs(v).toFixed(2)} lbs vs prior week`;
@@ -595,7 +620,7 @@ function drawTrainingCharts() {
     },
   };
   stack.plugins.tooltip.callbacks = {
-    title: (i) => `Week ${rows[i[0].dataIndex].index} · ${fmtShort(rows[i[0].dataIndex].start)}`,
+    title: (i) => `${weekLabel(rows[i[0].dataIndex])}`,
     label: (ctx) => (ctx.parsed.y ? `${ctx.dataset.label}: ${Math.round(ctx.parsed.y)} min` : null),
     footer: (i) => `Total: ${Math.round(rows[i[0].dataIndex].minutes)} min`,
   };
@@ -634,7 +659,7 @@ function drawTrainingCharts() {
 
   const distOpts = { ...baseOptions(), scales: { x: baseOptions().scales.x, y: { ...baseOptions().scales.y, beginAtZero: true } } };
   distOpts.plugins.tooltip.callbacks = {
-    title: (i) => `Week ${rows[i[0].dataIndex].index} · ${fmtShort(rows[i[0].dataIndex].start)}`,
+    title: (i) => `${weekLabel(rows[i[0].dataIndex])}`,
     label: (ctx) => (ctx.parsed.y ? `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)} mi` : null),
   };
   draw('distance', 'chartDistance', {
@@ -656,7 +681,7 @@ function drawTrainingCharts() {
   const tonOpts = { ...baseOptions(), scales: { x: baseOptions().scales.x, y: { ...baseOptions().scales.y, beginAtZero: true } } };
   tonOpts.scales.y.ticks.callback = (v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v);
   tonOpts.plugins.tooltip.callbacks = {
-    title: (i) => `Week ${rows[i[0].dataIndex].index} · ${fmtShort(rows[i[0].dataIndex].start)}`,
+    title: (i) => `${weekLabel(rows[i[0].dataIndex])}`,
     label: (ctx) => `Volume: ${Math.round(ctx.parsed.y).toLocaleString()} lbs · ${rows[ctx.dataIndex].liftSessions} session(s)`,
   };
   draw('tonnage', 'chartTonnage', {
@@ -764,7 +789,7 @@ function renderActivityDashboard(type) {
   const wOpts = { ...baseOptions(),
     scales: { x: baseOptions().scales.x, y: { ...baseOptions().scales.y, beginAtZero: true } } };
   wOpts.plugins.tooltip.callbacks = {
-    title: (i) => `Week ${weeks[i[0].dataIndex].index} · ${fmtShort(weeks[i[0].dataIndex].start)}`,
+    title: (i) => `${weekLabel(weeks[i[0].dataIndex])}`,
     label: (ctx) => (isLift
       ? `${Math.round(ctx.parsed.y).toLocaleString()} lbs`
       : `${ctx.parsed.y.toFixed(2)} mi`),
@@ -956,7 +981,7 @@ function renderWeightDashboard() {
     recapEl.innerHTML = `
       <div class="card">
         <div class="card-head">
-          <span class="card-title">Week ${w.index} recap</span>
+          <span class="card-title">${weekLabel(w)} recap</span>
           <span class="card-note">${fmtShort(w.start)} – ${fmtShort(w.end)} · last full week</span>
         </div>
         <div class="recap-row">${items.map(([l, v, extra]) => `
@@ -977,7 +1002,7 @@ function renderWeightDashboard() {
     </tr></thead>
     <tbody>${wr.slice().reverse().map((r) => `
       <tr>
-        <td class="l strong">${r.index}</td>
+        <td class="l strong">${r.index > 0 ? r.index : "–"}</td>
         <td class="l">${fmtShort(r.start)} – ${fmtShort(r.end)}</td>
         <td>${r.days || '—'}</td>
         <td class="strong">${n2(r.avg)}</td>
@@ -1514,6 +1539,7 @@ function finishSession() {
       distance: 0,
       label: '',
       notes: tpl.name,
+      bandWork: !!tpl.bandWork,
       exercises,
     });
   }
@@ -1580,6 +1606,29 @@ function renderSessionRunner() {
     </div>`;
 }
 
+// Whether today's scheduled work is already in the log. Without this the card
+// still offers "Start workout" after you have finished, which reads as though
+// nothing was recorded - and invites doing it twice.
+const doneToday = (tpl) => DATA.activities.filter((a) =>
+  a.date === todayISO() && a.type === 'lift' && a.notes === tpl.name);
+
+const loggedRunToday = () => DATA.activities.some((a) =>
+  a.date === todayISO() && a.type === 'run');
+
+function doneMarkup(tpl) {
+  const logged = doneToday(tpl);
+  const sets = logged.reduce((n, a) =>
+    n + (a.exercises || []).reduce((m, e) => m + (e.sets || []).length, 0), 0);
+  const volume = logged.reduce((n, a) => n + tonnageOf(a), 0);
+  const minutes = logged.reduce((n, a) => n + (Number(a.minutes) || 0), 0);
+  const bits = [`${sets} sets`];
+  if (volume) bits.push(`${int(volume)} lbs`);
+  if (minutes) bits.push(`${Math.round(minutes)} min`);
+  return `
+    <p class="done-line"><span class="tick">✓</span> Done today — ${esc(bits.join(' · '))}</p>
+    <button class="btn ghost sm" data-start="${tpl.id}">Do it again</button>`;
+}
+
 function renderPlan() {
   ensurePlan();
   const todayEl = document.getElementById('planToday');
@@ -1640,11 +1689,13 @@ function renderPlan() {
           <span class="card-title">Today — ${Programme.DAY_NAMES[dow]}</span>
           <span class="card-note">${esc(label)}</span>
         </div>
-        ${tpl ? `
+        ${tpl ? (doneToday(tpl).length ? doneMarkup(tpl) : `
           <div class="hint" style="margin-bottom:12px">${tpl.exercises.length} exercises · `
             + `${tpl.exercises.reduce((a, e) => a + e.sets, 0)} sets</div>
-          <button class="btn" data-start="${tpl.id}">Start workout</button>`
-        : p.type === 'run' ? '<p class="hint">Scheduled run — your next programme run is below.</p>'
+          <button class="btn" data-start="${tpl.id}">Start workout</button>`)
+        : p.type === 'run' ? (loggedRunToday()
+            ? '<p class="done-line"><span class="tick">✓</span> Run done today.</p>'
+            : '<p class="hint">Scheduled run — your next programme run is below.</p>')
         : '<p class="hint">Nothing scheduled. Rest is part of the plan.</p>'}
         ${dailyTemplates().map((d) => `
           <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
@@ -1652,7 +1703,8 @@ function renderPlan() {
               <span class="card-title">${esc(d.name)}</span>
               <span class="card-note">every day</span>
             </div>
-            <button class="btn ghost sm" data-start="${d.id}">Start</button>
+            ${doneToday(d).length ? doneMarkup(d)
+              : `<button class="btn ghost sm" data-start="${d.id}">Start</button>`}
           </div>`).join('')}
       </div>`;
   }
@@ -1699,24 +1751,35 @@ function renderPlan() {
       <div class="table-scroll"><table><thead><tr>
         <th class="l">Exercise</th><th>Sets</th><th>Reps</th>
         <th>${tpl.bandWork ? 'Bands' : 'Per side'}</th>
+        <th>Rep range</th>
         <th class="l">How to load it</th><th class="l">Next step</th>
       </tr></thead><tbody>
         ${tpl.exercises.map((ex, i) => {
           const step = Loads.suggestProgression(ex, DATA.settings.equipment);
+          const p = { ...Loads.PROGRESSION_DEFAULTS, ...(ex.progression || {}) };
           const num = (field, value, step2) =>
             `<input type="number" class="mini" min="0" step="${step2}" value="${value}"
                     data-edit="${tpl.id}:${i}:${field}" />`;
+          const range = (field, value) =>
+            `<input type="number" class="mini tiny" min="1" step="1" value="${value}"
+                    data-range="${tpl.id}:${i}:${field}" />`;
           return `<tr>
             <td class="l strong">${esc(ex.name)}</td>
             <td>${num('sets', ex.sets, 1)}</td>
             <td>${num('reps', ex.reps, 1)}</td>
             <td>${ex.bands ? `<span class="muted">${esc(ex.bands.join(' + '))}</span>`
                             : num('weight', ex.weight, 5)}</td>
+            <td class="nowrap">${range('minReps', p.minReps)}<span class="muted"> – </span>${range('maxReps', p.maxReps)}</td>
             <td class="l muted">${esc(exerciseLoading(ex))}</td>
             <td class="l">${esc(step.text)}</td>
           </tr>`;
         }).join('')}
       </tbody></table></div>
+      ${tpl.bandWork ? `<p class="hint" style="margin-top:10px">Done on each arm, and band
+        resistance is not a plate weight — so this is kept out of lifting volume.</p>`
+        : `<p class="hint" style="margin-top:10px">Rep range is where each
+        exercise starts and stops before the weight moves. Set it to what you can actually
+        finish — if five is your limit on a lift, a plan that resets you to eight is wrong.</p>`}
       ${tpl.bandWork ? '' : `<p class="hint" style="margin-top:10px">Weights are per side —
         both arms loaded the same. Totals are double.</p>`}
     </div>`).join('');
@@ -2755,6 +2818,28 @@ function wire() {
     const mins = DATA.runFinish[sp.dataset.split === 'runSpeed' ? 'runMin' : 'walkMin'];
     row.querySelector('.split-dist').textContent =
       v > 0 ? `${((v * mins) / 60).toFixed(2)} mi` : '—';
+  });
+
+  // Rep range is per exercise: what you can finish on a heavy lift is not what
+  // you can finish on a light one, and resetting to a rep count you cannot hit
+  // makes the whole progression wrong.
+  document.body.addEventListener('change', (e) => {
+    const r = e.target.closest('[data-range]');
+    if (!r) return;
+    const [tplId, idx, field] = r.dataset.range.split(':');
+    const tpl = templateById(tplId);
+    if (!tpl) return;
+    const ex = tpl.exercises[Number(idx)];
+    const v = Number(r.value);
+    if (!ex || !Number.isFinite(v) || v < 1) return;
+    ex.progression = { ...Loads.PROGRESSION_DEFAULTS, ...(ex.progression || {}), [field]: v };
+    if (ex.progression.minReps > ex.progression.maxReps) {
+      // Keep them ordered rather than silently producing an impossible range.
+      if (field === 'minReps') ex.progression.maxReps = v;
+      else ex.progression.minReps = v;
+    }
+    save(true);
+    renderPlan();
   });
 
   document.body.addEventListener('change', (e) => {

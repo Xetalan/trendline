@@ -17,7 +17,8 @@ const TODAY = new Date();
 const MONDAY = addDays(TODAY, -((TODAY.getDay() + 6) % 7));
 const M = iso(MONDAY);
 const T = iso(TODAY);
-const OLD = iso(addDays(MONDAY, -14));   // well before any tracked week
+const OLD = iso(addDays(MONDAY, -14));    // before the start date, but still real training
+const FUTURE = iso(addDays(MONDAY, 120)); // a mistyped date
 
 const DATA = {
   version: 1,
@@ -26,6 +27,11 @@ const DATA = {
   activities: [
     // The reported case: a hike dated before the first weigh-in.
     { id: 'old-hike', date: OLD, type: 'hike', minutes: 120, distance: 4.5, label: '', notes: 'trail', exercises: [] },
+    // Dated well into the future - a typo, and the only thing that should now
+    // fall outside the tracked weeks.
+    // Deliberately different numbers from the duplicate pair below, so that
+    // correcting its date does not turn it into a third duplicate.
+    { id: 'future-run', date: FUTURE, type: 'run', minutes: 25, distance: 2.5, label: '', notes: '', exercises: [] },
     // Same session entered twice.
     { id: 'dup-a', date: T, type: 'run', minutes: 30, distance: 3, label: '', notes: '', exercises: [] },
     { id: 'dup-b', date: T, type: 'run', minutes: 30, distance: 3, label: '', notes: '', exercises: [] },
@@ -89,11 +95,21 @@ app.whenReady().then(async () => {
   // ---- workouts view ----------------------------------------------------
   const rowCount = await run(`show('workouts'); workoutFilter='all'; openEditor=null; renderWorkouts();
     document.querySelectorAll('#workoutTable .w-row').length`);
-  check('workouts view lists every session', rowCount === 4, `rows=${rowCount}`);
+  check('workouts view lists every session', rowCount === 5, `rows=${rowCount}`);
 
   const flagText = await run(`document.getElementById('workoutFlags').textContent.replace(/\\s+/g,' ')`);
   check('duplicate entries are flagged', /look like duplicates/.test(flagText), flagText.slice(0, 100));
-  check('out-of-range workout is flagged', /outside your tracked weeks/.test(flagText), flagText.slice(0, 160));
+  check('a future-dated workout is flagged', /outside your tracked weeks/.test(flagText), flagText.slice(0, 160));
+
+  // Training done before the medication started is still training.
+  const counted = await run(`(() => {
+    const w = weeklyActivity().find((x) => x.start <= ${JSON.stringify(OLD)} && x.end >= ${JSON.stringify(OLD)});
+    return w ? { start: w.start, hikeMi: w.hikeMi } : null; })()`);
+  check('a pre-start workout lands in a real week', counted && counted.hikeMi === 4.5,
+    JSON.stringify(counted));
+  check('and weeks before the start date are named by date, not numbered',
+    /Week of/.test(await run(`weekLabel(weeklyActivity()[0])`)),
+    await run(`weekLabel(weeklyActivity()[0])`));
 
   const tagged = await run(`document.querySelectorAll('#workoutTable .chip.warn').length`);
   check('rows carry duplicate / out-of-range tags', tagged >= 3, `tags=${tagged}`);
@@ -101,7 +117,7 @@ app.whenReady().then(async () => {
   // ---- type filter ------------------------------------------------------
   const runRows = await run(`workoutFilter='run'; openEditor=null; renderWorkouts();
     document.querySelectorAll('#workoutTable .w-row').length`);
-  check('filter narrows to one type', runRows === 2, `run rows=${runRows}`);
+  check('filter narrows to one type', runRows === 3, `run rows=${runRows}`);
 
   const hikeTiles = await run(`workoutFilter='hike'; openEditor=null; renderWorkouts();
     document.getElementById('workoutTiles').textContent.replace(/\\s+/g,' ')`);
@@ -131,9 +147,16 @@ app.whenReady().then(async () => {
   check('edit saves date, distance and notes',
     hike.date === T && hike.distance === 5.25 && hike.notes === 'corrected date', JSON.stringify(hike));
 
+  // The mistyped future date is the one still flagged; correcting it clears it.
+  await run(`openEditor='future-run'; renderWorkouts(); true;`);
+  await settle();
+  await run(`(() => { const w = document.querySelector('#workoutTable .w-edit');
+    w.querySelector('.e-date').value = ${JSON.stringify(T)};
+    w.querySelector('.e-save').click(); return true; })()`);
+  await settle();
   const flagsAfter = await run(`renderWorkouts();
     document.getElementById('workoutFlags').textContent.replace(/\\s+/g,' ')`);
-  check('fixing the date clears the out-of-range flag',
+  check('fixing a mistyped date clears the out-of-range flag',
     !/outside your tracked weeks/.test(flagsAfter), flagsAfter.slice(0, 120));
 
   // ---- editing a lift ---------------------------------------------------

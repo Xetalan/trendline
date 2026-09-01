@@ -109,6 +109,15 @@ app.whenReady().then(async () => {
       benchAfter.reps === 11 && benchAfter.weight === 100 && benchAfter.sets === 3,
       JSON.stringify(benchAfter));
 
+    // ---- the card must show today as done -------------------------------
+    await run(`show('training'); showSubtab('training','plan'); renderPlan(); true;`);
+    await settle(400);
+    const todayCard = await run(`document.getElementById('planToday').textContent.replace(/\s+/g,' ')`);
+    check('after logging, today reads as done not "Start workout"',
+      /Done today/.test(todayCard) && !/Start workout/.test(todayCard), todayCard.slice(0, 120));
+    check('and it still offers a repeat',
+      await run(`!!document.querySelector('#planToday [data-start]')`), 'no repeat button');
+
     // ---- falling short must NOT advance ---------------------------------
     await run(`startSession('tpl-pull'); true;`);
     await settle(400);
@@ -126,6 +135,25 @@ app.whenReady().then(async () => {
     d2 = await run('JSON.parse(JSON.stringify(DATA))');
     check('a partial session is still logged', d2.activities.filter((a) => a.type === 'lift').length === 2,
       `${d2.activities.length} activities`);
+
+    // ---- band work stays out of lifting volume ---------------------------
+    await run(`startSession('tpl-armwrestle'); true;`);
+    await settle(400);
+    await run(`document.querySelectorAll('.set-btn').forEach((b) => b.click()); true;`);
+    await settle(400);
+    await run(`document.getElementById('sessFinish').click(); true;`);
+    await settle(600);
+    const withBands = await run('JSON.parse(JSON.stringify(DATA))');
+    const band = withBands.activities.find((a) => a.notes === 'Arm wrestling');
+    check('arm wrestling is logged', !!band, 'not logged');
+    check('and tagged as band work', band && band.bandWork === true, JSON.stringify(band && band.bandWork));
+    const bandVolume = await run(`tonnageOf(DATA.activities.find((a) => a.notes === 'Arm wrestling'))`);
+    check('it contributes no volume', bandVolume === 0, String(bandVolume));
+    const weekVol = await run(`weeklyActivity().reduce((n, w) => n + w.tonnage, 0)`);
+    const liftVol = await run(`DATA.activities.filter((a) => !a.bandWork)
+      .reduce((n, a) => n + tonnageOf(a), 0)`);
+    check('weekly volume counts only the plate work', weekVol === liftVol,
+      `week ${weekVol} vs lifts ${liftVol}`);
 
     // ---- cancelling leaves everything alone ------------------------------
     const beforeCancel = await run('DATA.activities.length');
