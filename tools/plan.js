@@ -155,6 +155,21 @@ app.whenReady().then(async () => {
     check('weekly volume counts only the plate work', weekVol === liftVol,
       `week ${weekVol} vs lifts ${liftVol}`);
 
+    // The daily template has its own block on the card and must report done
+    // the same way the scheduled workout does.
+    await run(`show('training'); showSubtab('training','plan'); renderPlan(); true;`);
+    await settle(400);
+    const dailyBlock = await run(`(() => {
+      const card = document.getElementById('planToday');
+      const idx = card.textContent.indexOf('Arm wrestling');
+      return card.textContent.slice(idx).replace(/\\s+/g, ' ').trim(); })()`);
+    check('arm wrestling reads as done once logged',
+      /Done today/.test(dailyBlock), dailyBlock.slice(0, 100));
+    check('and it does not still say Start',
+      !/Arm wrestling every day Start/.test(dailyBlock), dailyBlock.slice(0, 100));
+    check('its summary shows sets but no volume, being band work',
+      /sets/.test(dailyBlock) && !/lbs/.test(dailyBlock), dailyBlock.slice(0, 100));
+
     // ---- cancelling leaves everything alone ------------------------------
     const beforeCancel = await run('DATA.activities.length');
     await run(`startSession('tpl-shoulders'); true;`);
